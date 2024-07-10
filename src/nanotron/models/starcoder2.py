@@ -124,12 +124,22 @@ class StarcoderRotaryEmbedding(nn.Module):
         assert self.inv_freq.dtype == torch.float
 
         self.inv_freq = 1.0 / (
-            self.base ** (torch.arange(0, self.head_dim, 2, dtype=torch.float, device="cuda") / self.head_dim)
+            self.base
+            ** (
+                torch.arange(0, self.head_dim, 2, dtype=torch.float, device="cuda")
+                / self.head_dim
+            )
         )
 
         self._initialized_buffer = True
 
-    def cos_sin(self, seq_len: int, past_key_values_length: int, device="cpu", dtype=torch.bfloat16) -> torch.Tensor:
+    def cos_sin(
+        self,
+        seq_len: int,
+        past_key_values_length: int,
+        device="cpu",
+        dtype=torch.bfloat16,
+    ) -> torch.Tensor:
         total_length = seq_len + past_key_values_length
         if total_length > self.seq_len_cached:
             self.seq_len_cached = total_length
@@ -147,8 +157,12 @@ class StarcoderRotaryEmbedding(nn.Module):
             self.sin_cached = self.sin_cached.type(dtype)
 
         return (
-            self.cos_cached[:, past_key_values_length : seq_len + past_key_values_length],
-            self.sin_cached[:, past_key_values_length : seq_len + past_key_values_length],
+            self.cos_cached[
+                :, past_key_values_length : seq_len + past_key_values_length
+            ],
+            self.sin_cached[
+                :, past_key_values_length : seq_len + past_key_values_length
+            ],
         )
 
     def forward(self, query, key, past_key_values_length=0):
@@ -169,7 +183,9 @@ class StarcoderRotaryEmbedding(nn.Module):
         cos, sin = self.cos_sin(
             seq_len, past_key_values_length, query.device, query.dtype
         )  # [1, seq_len, 1, head_dim]
-        return (query * cos) + (rotate_half(query) * sin), (key * cos) + (rotate_half(key) * sin)
+        return (query * cos) + (rotate_half(query) * sin), (key * cos) + (
+            rotate_half(key) * sin
+        )
 
 
 class MLP(nn.Module):
@@ -182,9 +198,15 @@ class MLP(nn.Module):
         super().__init__()
 
         # TODO @thomasw21: refactor so that we store that default in a single place.
-        tp_mode = parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE
+        tp_mode = (
+            parallel_config.tp_mode
+            if parallel_config is not None
+            else TensorParallelLinearMode.ALL_REDUCE
+        )
         tp_linear_async_communication = (
-            parallel_config.tp_linear_async_communication if parallel_config is not None else False
+            parallel_config.tp_linear_async_communication
+            if parallel_config is not None
+            else False
         )
 
         d_ff = config.n_inner if config.n_inner is not None else 4 * config.hidden_size
@@ -203,7 +225,8 @@ class MLP(nn.Module):
             pg=tp_pg,
             mode=tp_mode,
             bias=True,
-            async_communication=tp_linear_async_communication and tp_mode is TensorParallelLinearMode.REDUCE_SCATTER,
+            async_communication=tp_linear_async_communication
+            and tp_mode is TensorParallelLinearMode.REDUCE_SCATTER,
         )
 
     def forward(self, hidden_states):  # [seq_length, batch_size, hidden_dim]
@@ -218,11 +241,18 @@ class CoreAttention(nn.Module):
     Attention module similar to CoreAttention where only the query is multi-headed.
     """
 
-    def __init__(self, config: Starcoder2Config, parallel_config: Optional[ParallelismArgs], layer_idx: int):
+    def __init__(
+        self,
+        config: Starcoder2Config,
+        parallel_config: Optional[ParallelismArgs],
+        layer_idx: int,
+    ):
         super().__init__()
         from flash_attn.flash_attn_interface import flash_attn_varlen_func
 
-        _flash_supports_window_size = "window_size" in list(inspect.signature(flash_attn_varlen_func).parameters)
+        _flash_supports_window_size = "window_size" in list(
+            inspect.signature(flash_attn_varlen_func).parameters
+        )
 
         assert (
             config.hidden_size % config.num_attention_heads == 0
@@ -237,13 +267,19 @@ class CoreAttention(nn.Module):
         # if config.scale_attn_weights:
         #     self.scale_factor = self.scale_factor / (self.d_qk**0.5)
 
-        self.checkpoint_attention = False  # Because flash_attn already does checkpointing
+        self.checkpoint_attention = (
+            False  # Because flash_attn already does checkpointing
+        )
 
         if config.sliding_window_size is not None:
             assert (
                 _flash_supports_window_size
             ), "Current version of flash-attn doesn't support sliding window: `pip install flash-attn>=2.3`"
-        self.sliding_window_size = config.sliding_window_size if layer_idx not in config.global_attn_layers else None
+        self.sliding_window_size = (
+            config.sliding_window_size
+            if layer_idx not in config.global_attn_layers
+            else None
+        )
 
     @checkpoint_method(attr_name="checkpoint_attention")
     def forward(
@@ -257,10 +293,28 @@ class CoreAttention(nn.Module):
         from flash_attn.flash_attn_interface import flash_attn_varlen_func
 
         # TODO @thomasw21: Compute once, instead of computing for each layers.
-        cu_seqlens_q = torch.zeros((q_sequence_mask.shape[0] + 1), dtype=torch.int32, device=query_states.device)
-        cu_seqlens_k = torch.zeros((kv_sequence_mask.shape[0] + 1), dtype=torch.int32, device=query_states.device)
-        torch.cumsum(q_sequence_mask.sum(-1, dtype=torch.int32), dim=0, dtype=torch.int32, out=cu_seqlens_q[1:])
-        torch.cumsum(kv_sequence_mask.sum(-1, dtype=torch.int32), dim=0, dtype=torch.int32, out=cu_seqlens_k[1:])
+        cu_seqlens_q = torch.zeros(
+            (q_sequence_mask.shape[0] + 1),
+            dtype=torch.int32,
+            device=query_states.device,
+        )
+        cu_seqlens_k = torch.zeros(
+            (kv_sequence_mask.shape[0] + 1),
+            dtype=torch.int32,
+            device=query_states.device,
+        )
+        torch.cumsum(
+            q_sequence_mask.sum(-1, dtype=torch.int32),
+            dim=0,
+            dtype=torch.int32,
+            out=cu_seqlens_q[1:],
+        )
+        torch.cumsum(
+            kv_sequence_mask.sum(-1, dtype=torch.int32),
+            dim=0,
+            dtype=torch.int32,
+            out=cu_seqlens_k[1:],
+        )
 
         # TODO(kunhao): flash attn's causal means that the query can only attend to the keys before it. This is not
         # what we want if we are using kv cache. This is a hack as we always have q_length == 1 when using kv cache.
@@ -276,7 +330,11 @@ class CoreAttention(nn.Module):
             dropout_p=self.dropout if self.training else 0.0,
             softmax_scale=None,  # defaults to 1/sqrt(d_qk)
             causal=causal,
-            window_size=(self.sliding_window_size - 1, 0) if self.sliding_window_size is not None else (-1, -1),
+            window_size=(
+                (self.sliding_window_size - 1, 0)
+                if self.sliding_window_size is not None
+                else (-1, -1)
+            ),
             return_attn_probs=False,
         )
 
@@ -367,7 +425,9 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
             # https://cs.github.com/pytorch/pytorch/blob/2b267fa7f28e18ca6ea1de4201d2541a40411457/torch/distributed/nn/functional.py#L317
             x = x.contiguous()
 
-            gather_x_handle = dist.all_gather_into_tensor(gathered_x, x, group=tp_pg, async_op=True)
+            gather_x_handle = dist.all_gather_into_tensor(
+                gathered_x, x, group=tp_pg, async_op=True
+            )
 
         # Compute kv (we assume that kv is duplicated across TP)
         kv_out = F.linear(x, kv_weight, kv_bias)
@@ -395,7 +455,9 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
                 requires_grad=x.requires_grad,
             )
 
-            gather_kv_out_handle = dist.all_gather_into_tensor(gathered_kv_out, kv_out, group=tp_pg, async_op=True)
+            gather_kv_out_handle = dist.all_gather_into_tensor(
+                gathered_kv_out, kv_out, group=tp_pg, async_op=True
+            )
 
         # Compute q
         q_out = F.linear(gathered_x, q_weight, q_bias)
@@ -409,9 +471,15 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
         return q_out, gathered_kv_out
 
     @staticmethod
-    def backward(
-        ctx, grad_q: torch.Tensor, grad_kv: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor, Optional[torch.Tensor], None, None]:
+    def backward(ctx, grad_q: torch.Tensor, grad_kv: torch.Tensor) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        Optional[torch.Tensor],
+        torch.Tensor,
+        Optional[torch.Tensor],
+        None,
+        None,
+    ]:
         tp_pg = ctx.tp_pg
         split_q_and_kv_id = ctx.split_q_and_kv_id
         use_q_bias = ctx.use_q_bias
@@ -436,7 +504,9 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
                 dtype=x.dtype,
                 requires_grad=False,
             )
-            gather_x_handle = dist.all_gather_into_tensor(gathered_x, x, group=tp_pg, async_op=True)
+            gather_x_handle = dist.all_gather_into_tensor(
+                gathered_x, x, group=tp_pg, async_op=True
+            )
 
         # Backward computation on `kv` and `q` with regards to input
         grad_qkv = torch.concat([grad_q, grad_kv], dim=-1)
@@ -453,7 +523,10 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
             sub_gradient_tensor = grad_tensor
         else:
             sub_gradient_tensor = torch.empty(
-                x.shape, dtype=grad_tensor.dtype, device=grad_tensor.device, requires_grad=False
+                x.shape,
+                dtype=grad_tensor.dtype,
+                device=grad_tensor.device,
+                requires_grad=False,
             )
             # reduce_scatter
             sub_gradient_tensor_handle = dist.reduce_scatter_tensor(
@@ -469,11 +542,18 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
         # grad_q_weight = flat_grad_q.t().matmul(flat_gathered_x)
         # grad_q_bias = flat_grad_q.sum(dim=0) if use_q_bias else None
 
-        flat_gathered_x = gathered_x.view(math.prod(gathered_x.shape[:-1]), gathered_x.shape[-1])
-        flat_grad_qkv = grad_qkv.view(math.prod(grad_qkv.shape[:-1]), grad_qkv.shape[-1])
+        flat_gathered_x = gathered_x.view(
+            math.prod(gathered_x.shape[:-1]), gathered_x.shape[-1]
+        )
+        flat_grad_qkv = grad_qkv.view(
+            math.prod(grad_qkv.shape[:-1]), grad_qkv.shape[-1]
+        )
         grad_q_weight, grad_kv_weight = torch.split(
             flat_grad_qkv.t().matmul(flat_gathered_x),
-            split_size_or_sections=[split_q_and_kv_id, grad_qkv.shape[-1] - split_q_and_kv_id],
+            split_size_or_sections=[
+                split_q_and_kv_id,
+                grad_qkv.shape[-1] - split_q_and_kv_id,
+            ],
             dim=0,
         )
         if use_q_bias is True:
@@ -481,7 +561,10 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
                 grad_qkv_bias = flat_grad_qkv.sum(dim=0)
                 grad_q_bias, grad_kv_bias = torch.split(
                     grad_qkv_bias,
-                    split_size_or_sections=[split_q_and_kv_id, grad_qkv.shape[-1] - split_q_and_kv_id],
+                    split_size_or_sections=[
+                        split_q_and_kv_id,
+                        grad_qkv.shape[-1] - split_q_and_kv_id,
+                    ],
                     dim=0,
                 )
             else:
@@ -498,7 +581,15 @@ class _MQAColumnLinearReduceScatterAsyncCommunication(torch.autograd.Function):
         if sub_gradient_tensor_handle is not None:
             sub_gradient_tensor_handle.wait()
 
-        return sub_gradient_tensor, grad_q_weight, grad_q_bias, grad_kv_weight, grad_kv_bias, None, None
+        return (
+            sub_gradient_tensor,
+            grad_q_weight,
+            grad_q_bias,
+            grad_kv_weight,
+            grad_kv_bias,
+            None,
+            None,
+        )
 
 
 class MQAColumnLinears(nn.Module):
@@ -528,7 +619,8 @@ class MQAColumnLinears(nn.Module):
         self.mode = mode
         self.async_communication = async_communication
         self.use_MQAColumnLinearReduceScatterAsyncCommunication = (
-            self.mode is TensorParallelLinearMode.REDUCE_SCATTER and self.async_communication is True
+            self.mode is TensorParallelLinearMode.REDUCE_SCATTER
+            and self.async_communication is True
         )
 
         # allocating tensor
@@ -562,18 +654,30 @@ class MQAColumnLinears(nn.Module):
         # Register parameters
         # We are very lucky because the sharding allows parameters to still be contiguous.
         # We use a hack to propagate gradients
-        q_param_dict = {"weight": get_sliced_parameter(self._qkv_weight, slice_object=slice(self.q_out_features))}
+        q_param_dict = {
+            "weight": get_sliced_parameter(
+                self._qkv_weight, slice_object=slice(self.q_out_features)
+            )
+        }
         kv_param_dict = {
-            "weight": get_sliced_parameter(self._qkv_weight, slice_object=slice(self.q_out_features, None))
+            "weight": get_sliced_parameter(
+                self._qkv_weight, slice_object=slice(self.q_out_features, None)
+            )
         }
         if bias is True:
-            q_param_dict["bias"] = get_sliced_parameter(self._qkv_bias, slice_object=slice(self.q_out_features))
-            kv_param_dict["bias"] = get_sliced_parameter(self._qkv_bias, slice_object=slice(self.q_out_features, None))
+            q_param_dict["bias"] = get_sliced_parameter(
+                self._qkv_bias, slice_object=slice(self.q_out_features)
+            )
+            kv_param_dict["bias"] = get_sliced_parameter(
+                self._qkv_bias, slice_object=slice(self.q_out_features, None)
+            )
         self.q = nn.ParameterDict(q_param_dict)
         self.kv = nn.ParameterDict(kv_param_dict)
 
         # Marking as tied/sharded
-        mark_all_parameters_in_module_as_sharded(self.q, pg=self.pg, split_config=SplitConfig(split_dim=0))
+        mark_all_parameters_in_module_as_sharded(
+            self.q, pg=self.pg, split_config=SplitConfig(split_dim=0)
+        )
 
         # Init
         self.reset_parameters()
@@ -594,7 +698,13 @@ class MQAColumnLinears(nn.Module):
             assert self._qkv_weight.requires_grad is False
             assert self._qkv_bias is None or self._qkv_bias.requires_grad is False
             return _MQAColumnLinearReduceScatterAsyncCommunication.apply(
-                x, self.q.weight, self.q.bias, self.kv.weight, self.kv.bias, self._qkv_weight, self.pg
+                x,
+                self.q.weight,
+                self.q.bias,
+                self.kv.weight,
+                self.kv.bias,
+                self._qkv_weight,
+                self.pg,
             )
         qkv = column_linear(
             input=x,
@@ -604,7 +714,11 @@ class MQAColumnLinears(nn.Module):
             tp_mode=self.mode,
             async_communication=self.async_communication,
         )
-        q, kv = torch.split(qkv, dim=-1, split_size_or_sections=[self.q_out_features, self.kv_out_features])
+        q, kv = torch.split(
+            qkv,
+            dim=-1,
+            split_size_or_sections=[self.q_out_features, self.kv_out_features],
+        )
         return q, kv
 
 
@@ -628,9 +742,15 @@ class CausalSelfMQA(nn.Module, AttachableStore):
         self.d_model = config.hidden_size
 
         # TODO @thomasw21: refactor so that we store that default in a single place.
-        tp_mode = parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE
+        tp_mode = (
+            parallel_config.tp_mode
+            if parallel_config is not None
+            else TensorParallelLinearMode.ALL_REDUCE
+        )
         tp_linear_async_communication = (
-            parallel_config.tp_linear_async_communication if parallel_config is not None else False
+            parallel_config.tp_linear_async_communication
+            if parallel_config is not None
+            else False
         )
 
         self.mode = tp_mode
@@ -659,7 +779,8 @@ class CausalSelfMQA(nn.Module, AttachableStore):
             pg=tp_pg,
             mode=tp_mode,
             bias=True,
-            async_communication=tp_linear_async_communication and tp_mode is TensorParallelLinearMode.REDUCE_SCATTER,
+            async_communication=tp_linear_async_communication
+            and tp_mode is TensorParallelLinearMode.REDUCE_SCATTER,
         )
 
         assert config.multi_query is True
@@ -714,16 +835,24 @@ class CausalSelfMQA(nn.Module, AttachableStore):
                 q_length, batch_size, self.n_heads, self.d_qk
             )  # [q_length, batch_size, num_heads,  d_qk]
             query_states = (
-                query_states.permute(1, 0, 2, 3).contiguous().view(batch_size, q_length, self.n_heads, self.d_qk)
+                query_states.permute(1, 0, 2, 3)
+                .contiguous()
+                .view(batch_size, q_length, self.n_heads, self.d_qk)
             )  # [batch_size, q_length, num_heads, d_qk]
             key_states, value_states = torch.split(
                 kv_states, [self.d_qk, self.d_v], dim=-1
             )  # [kv_length, batch_size, d_qk], [kv_length, batch_size, d_v]
             key_states = (
-                key_states.transpose(0, 1).contiguous().view(batch_size, kv_length, self.d_qk).unsqueeze(dim=2)
+                key_states.transpose(0, 1)
+                .contiguous()
+                .view(batch_size, kv_length, self.d_qk)
+                .unsqueeze(dim=2)
             )  # [batch_size, kv_length, 1, d_qk]
             value_states = (
-                value_states.transpose(0, 1).contiguous().view(batch_size, kv_length, self.d_v).unsqueeze(dim=2)
+                value_states.transpose(0, 1)
+                .contiguous()
+                .view(batch_size, kv_length, self.d_v)
+                .unsqueeze(dim=2)
             )  # [batch_size, kv_length, 1, d_v]
             return query_states, key_states, value_states
 
@@ -732,7 +861,9 @@ class CausalSelfMQA(nn.Module, AttachableStore):
             hidden_states
         )  # [seq_length, batch_size, num_heads * d_qk], [seq_length, batch_size, d_qk + d_v]
 
-        query_states, key_states, value_states = shape(query_states=query_states, kv_states=kv_states)
+        query_states, key_states, value_states = shape(
+            query_states=query_states, kv_states=kv_states
+        )
         # [batch_size, q_length, num_heads, d_qk], [batch_size, kv_length, 1, d_qk], [batch_size, kv_length, 1, d_v]
         seq_length_dim = 1
         q_length = query_states.shape[seq_length_dim]
@@ -751,7 +882,9 @@ class CausalSelfMQA(nn.Module, AttachableStore):
 
                 past_key_values_length = store["past_key_values_length"]
             else:
-                position_ids = torch.cumsum(sequence_mask, dim=-1, dtype=torch.int32) - 1
+                position_ids = (
+                    torch.cumsum(sequence_mask, dim=-1, dtype=torch.int32) - 1
+                )
                 past_key_values_length = 0
             position_offsets = position_ids[:, -1]
             query_states, key_states = self.maybe_rotary(
@@ -764,7 +897,8 @@ class CausalSelfMQA(nn.Module, AttachableStore):
                 # assert that [ False, False, False, False,  True,  True,  True,  True,  True,  True] is accepted
                 # but [ False, False, False, False,  True,  True,  False,  False,  True,  True] is not (can't mask in the middle of sequence)
                 assert ~(
-                    sequence_mask[:, :-1] & (~sequence_mask[:, 1:])  # True is never followed by False
+                    sequence_mask[:, :-1]
+                    & (~sequence_mask[:, 1:])  # True is never followed by False
                 ).any(), "Can't mask in the middle of sequence, please make sure that pads are at the left of the sequence if existing"
 
                 # preallocate k_cache, v_cache to self.prefill_kv_len
@@ -785,14 +919,18 @@ class CausalSelfMQA(nn.Module, AttachableStore):
                 )
                 # Remove pad tokens from key_states and concatenate samples in key_unpad
                 # cu_seqlens_k is the cumulative sequence lengths of key_states
-                (query_unpad, indices_q, cu_seqlens_q, max_seqlen_q) = bert_padding.unpad_input(
-                    query_states,
-                    sequence_mask,
+                (query_unpad, indices_q, cu_seqlens_q, max_seqlen_q) = (
+                    bert_padding.unpad_input(
+                        query_states,
+                        sequence_mask,
+                    )
                 )
-                (key_unpad, indices_k, cu_seqlens_k, max_seqlen_k) = bert_padding.unpad_input(
-                    key_states, sequence_mask
+                (key_unpad, indices_k, cu_seqlens_k, max_seqlen_k) = (
+                    bert_padding.unpad_input(key_states, sequence_mask)
                 )
-                (value_unpad, _, _, _) = bert_padding.unpad_input(value_states, sequence_mask)
+                (value_unpad, _, _, _) = bert_padding.unpad_input(
+                    value_states, sequence_mask
+                )
 
                 output_unpad = flash_attn_varlen_func(
                     q=query_unpad,  # (total_q, n_heads, d_qk)
@@ -826,8 +964,12 @@ class CausalSelfMQA(nn.Module, AttachableStore):
                     batch_size, q_length, self.n_heads, self.d_qk
                 )  # [batch_size, q_length, self.n_heads, d_qk]
                 kv_length = key_states.shape[1]
-                key_states = key_states.view(batch_size, kv_length, 1, self.d_qk)  # [batch_size, kv_length, 1, d_qk]
-                value_states = value_states.view(batch_size, kv_length, 1, self.d_v)  # [batch_size, kv_length, 1, d_v]
+                key_states = key_states.view(
+                    batch_size, kv_length, 1, self.d_qk
+                )  # [batch_size, kv_length, 1, d_qk]
+                value_states = value_states.view(
+                    batch_size, kv_length, 1, self.d_v
+                )  # [batch_size, kv_length, 1, d_v]
 
                 attention_output = flash_attn_with_kvcache(
                     query_states,
@@ -854,12 +996,16 @@ class CausalSelfMQA(nn.Module, AttachableStore):
             )
 
         else:
-            query_states, key_states = self.maybe_rotary(query_states, key_states, past_key_values_length=0)
+            query_states, key_states = self.maybe_rotary(
+                query_states, key_states, past_key_values_length=0
+            )
             q_sequence_mask = sequence_mask
             kv_sequence_mask = sequence_mask
 
             kv_length = key_states.shape[seq_length_dim]
-            query_states = query_states.view(batch_size * q_length, self.n_heads, self.d_qk)
+            query_states = query_states.view(
+                batch_size * q_length, self.n_heads, self.d_qk
+            )
             key_states = key_states.view(batch_size * kv_length, 1, self.d_qk)
             value_states = value_states.view(batch_size * kv_length, 1, self.d_v)
 
@@ -896,9 +1042,15 @@ class CausalSelfGQA(nn.Module, AttachableStore):
         self.head_dim = self.hidden_size // self.num_heads
         self.split_size = self.hidden_size
 
-        tp_mode = parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE
+        tp_mode = (
+            parallel_config.tp_mode
+            if parallel_config is not None
+            else TensorParallelLinearMode.ALL_REDUCE
+        )
         tp_linear_async_communication = (
-            parallel_config.tp_linear_async_communication if parallel_config is not None else False
+            parallel_config.tp_linear_async_communication
+            if parallel_config is not None
+            else False
         )
 
         if self.head_dim * self.num_heads != self.hidden_size:
@@ -941,7 +1093,8 @@ class CausalSelfGQA(nn.Module, AttachableStore):
             pg=tp_pg,
             mode=tp_mode,
             bias=True,
-            async_communication=tp_linear_async_communication and tp_mode is TensorParallelLinearMode.REDUCE_SCATTER,
+            async_communication=tp_linear_async_communication
+            and tp_mode is TensorParallelLinearMode.REDUCE_SCATTER,
         )
         assert config.multi_query is False
         assert config.grouped_query is True
@@ -971,13 +1124,23 @@ class CausalSelfGQA(nn.Module, AttachableStore):
         )  # [seq_length, batch_size, n_local_q_heads * head_dim + 2 * n_local_kv_heads * head_dim]
         q_length, batch_size, _ = fused_qkv.size()
 
-        qkv = fused_qkv.view(q_length, batch_size, self.n_local_kv_heads, self.n_repeats + 2, self.head_dim)
+        qkv = fused_qkv.view(
+            q_length,
+            batch_size,
+            self.n_local_kv_heads,
+            self.n_repeats + 2,
+            self.head_dim,
+        )
         query, key, value = torch.split(qkv, [self.n_repeats, 1, 1], dim=3)
         query_states = query.transpose(0, 1).reshape(
             batch_size, q_length, self.n_local_q_heads, self.head_dim
         )  # TODO @nouamane: can we transpose qkv instead?
-        key_states = key.transpose(0, 1).reshape(batch_size, q_length, self.n_local_kv_heads, self.head_dim)
-        value_states = value.transpose(0, 1).reshape(batch_size, q_length, self.n_local_kv_heads, self.head_dim)
+        key_states = key.transpose(0, 1).reshape(
+            batch_size, q_length, self.n_local_kv_heads, self.head_dim
+        )
+        value_states = value.transpose(0, 1).reshape(
+            batch_size, q_length, self.n_local_kv_heads, self.head_dim
+        )
 
         # Get cached key/values from store if available
         store = self.get_local_store()
@@ -992,7 +1155,9 @@ class CausalSelfGQA(nn.Module, AttachableStore):
 
                 past_key_values_length = store["past_key_values_length"]
             else:
-                position_ids = torch.cumsum(sequence_mask, dim=-1, dtype=torch.int32) - 1
+                position_ids = (
+                    torch.cumsum(sequence_mask, dim=-1, dtype=torch.int32) - 1
+                )
                 past_key_values_length = 0
             position_offsets = position_ids[:, -1]
             query_states, key_states = self.maybe_rotary(
@@ -1005,7 +1170,8 @@ class CausalSelfGQA(nn.Module, AttachableStore):
                 # assert that [ False, False, False, False,  True,  True,  True,  True,  True,  True] is accepted
                 # but [ False, False, False, False,  True,  True,  False,  False,  True,  True] is not (can't mask in the middle of sequence)
                 assert ~(
-                    sequence_mask[:, :-1] & (~sequence_mask[:, 1:])  # True is never followed by False
+                    sequence_mask[:, :-1]
+                    & (~sequence_mask[:, 1:])  # True is never followed by False
                 ).any(), "Can't mask in the middle of sequence, please make sure that pads are at the left of the sequence if existing"
 
                 # preallocate k_cache, v_cache to self.prefill_kv_len
@@ -1020,20 +1186,29 @@ class CausalSelfGQA(nn.Module, AttachableStore):
                     device=query_states.device,
                 )
                 v_cache = torch.zeros(
-                    (batch_size, self.prefill_kv_len, self.n_local_kv_heads, self.head_dim),
+                    (
+                        batch_size,
+                        self.prefill_kv_len,
+                        self.n_local_kv_heads,
+                        self.head_dim,
+                    ),
                     dtype=query_states.dtype,
                     device=query_states.device,
                 )
                 # Remove pad tokens from key_states and concatenate samples in key_unpad
                 # cu_seqlens_k is the cumulative sequence lengths of key_states
-                (query_unpad, indices_q, cu_seqlens_q, max_seqlen_q) = bert_padding.unpad_input(
-                    query_states,
-                    sequence_mask,
+                (query_unpad, indices_q, cu_seqlens_q, max_seqlen_q) = (
+                    bert_padding.unpad_input(
+                        query_states,
+                        sequence_mask,
+                    )
                 )
-                (key_unpad, indices_k, cu_seqlens_k, max_seqlen_k) = bert_padding.unpad_input(
-                    key_states, sequence_mask
+                (key_unpad, indices_k, cu_seqlens_k, max_seqlen_k) = (
+                    bert_padding.unpad_input(key_states, sequence_mask)
                 )
-                (value_unpad, _, _, _) = bert_padding.unpad_input(value_states, sequence_mask)
+                (value_unpad, _, _, _) = bert_padding.unpad_input(
+                    value_states, sequence_mask
+                )
 
                 output_unpad = flash_attn_varlen_func(
                     q=query_unpad,  # (total_q, self.n_local_q_heads, d_qk)
@@ -1091,7 +1266,9 @@ class CausalSelfGQA(nn.Module, AttachableStore):
 
             # Update store
             if past_key_values_length == 0:
-                past_key_values_length = sequence_mask.shape[1] - 1  # we add 1 when we load the value
+                past_key_values_length = (
+                    sequence_mask.shape[1] - 1
+                )  # we add 1 when we load the value
             else:
                 past_key_values_length += 1
             store.update(
@@ -1104,7 +1281,9 @@ class CausalSelfGQA(nn.Module, AttachableStore):
             )
         else:
             # Apply rotary embeddings to query/key states
-            query_states, key_states = self.maybe_rotary(query_states, key_states, past_key_values_length=0)
+            query_states, key_states = self.maybe_rotary(
+                query_states, key_states, past_key_values_length=0
+            )
             q_sequence_mask = sequence_mask
             kv_sequence_mask = sequence_mask
 
@@ -1129,9 +1308,9 @@ class CausalSelfGQA(nn.Module, AttachableStore):
                 kv_sequence_mask=kv_sequence_mask,
             )  # [batch_size * seq_length, self.n_local_q_heads, head_dim]
 
-        attention_output = attention_output.view(batch_size, q_length, self.n_local_q_heads * self.head_dim).transpose(
-            0, 1
-        )
+        attention_output = attention_output.view(
+            batch_size, q_length, self.n_local_q_heads * self.head_dim
+        ).transpose(0, 1)
         output = self.dense(attention_output)
 
         return {"hidden_states": output, "sequence_mask": sequence_mask}
@@ -1147,7 +1326,9 @@ def dropout_add(x, residual, prob, training):
 
 
 @torch.jit.script
-def dropout_add_fused_train(x: torch.Tensor, residual: torch.Tensor, prob: float) -> torch.Tensor:
+def dropout_add_fused_train(
+    x: torch.Tensor, residual: torch.Tensor, prob: float
+) -> torch.Tensor:
     return dropout_add(x, residual, prob, True)
 
 
@@ -1177,7 +1358,9 @@ class GPTBlock(nn.Module):
                 layer_idx=layer_idx,
             )
         else:
-            raise ValueError("Either `multi_query` or `grouped_query` must be True")  # TODO: @nouamane not necessarily
+            raise ValueError(
+                "Either `multi_query` or `grouped_query` must be True"
+            )  # TODO: @nouamane not necessarily
         self.attn_dropout = config.attn_pdrop
 
         self.ln_2 = TritonLayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
@@ -1185,7 +1368,11 @@ class GPTBlock(nn.Module):
         self.ff_dropout = config.resid_pdrop
 
         self.random_states = random_states
-        self.tp_mode = parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE
+        self.tp_mode = (
+            parallel_config.tp_mode
+            if parallel_config is not None
+            else TensorParallelLinearMode.ALL_REDUCE
+        )
 
     def forward(
         self,
@@ -1199,9 +1386,13 @@ class GPTBlock(nn.Module):
 
         if self.training:
             with branch_random_state(
-                self.random_states, "tp_synced", enabled=self.tp_mode is TensorParallelLinearMode.ALL_REDUCE
+                self.random_states,
+                "tp_synced",
+                enabled=self.tp_mode is TensorParallelLinearMode.ALL_REDUCE,
             ):
-                hidden_states = dropout_add_fused_train(hidden_states, residual=residual, prob=self.attn_dropout)
+                hidden_states = dropout_add_fused_train(
+                    hidden_states, residual=residual, prob=self.attn_dropout
+                )
         else:
             # No need for random state context manager
             hidden_states = hidden_states + residual
@@ -1212,9 +1403,13 @@ class GPTBlock(nn.Module):
 
         if self.training:
             with branch_random_state(
-                self.random_states, "tp_synced", enabled=self.tp_mode is TensorParallelLinearMode.ALL_REDUCE
+                self.random_states,
+                "tp_synced",
+                enabled=self.tp_mode is TensorParallelLinearMode.ALL_REDUCE,
             ):
-                hidden_states = dropout_add_fused_train(hidden_states, residual=residual, prob=self.ff_dropout)
+                hidden_states = dropout_add_fused_train(
+                    hidden_states, residual=residual, prob=self.ff_dropout
+                )
         else:
             # No need for random state context manager
             hidden_states = hidden_states + residual
@@ -1226,17 +1421,28 @@ class GPTBlock(nn.Module):
 
 
 class Embedding(nn.Module, AttachableStore):
-    def __init__(self, tp_pg: dist.ProcessGroup, config: Starcoder2Config, parallel_config: Optional[ParallelismArgs]):
+    def __init__(
+        self,
+        tp_pg: dist.ProcessGroup,
+        config: Starcoder2Config,
+        parallel_config: Optional[ParallelismArgs],
+    ):
         super().__init__()
         self.token_embedding = TensorParallelEmbedding(
             num_embeddings=config.vocab_size,
             embedding_dim=config.hidden_size,
             pg=tp_pg,
-            mode=parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE,
+            mode=(
+                parallel_config.tp_mode
+                if parallel_config is not None
+                else TensorParallelLinearMode.ALL_REDUCE
+            ),
         )
         self.pg = tp_pg
 
-    def forward(self, input_ids: torch.Tensor, input_mask: torch.Tensor):  # [batch_size, seq_length]
+    def forward(
+        self, input_ids: torch.Tensor, input_mask: torch.Tensor
+    ):  # [batch_size, seq_length]
         # store = self.get_local_store()
         # if store is not None:
         #     if "past_length" in store:
@@ -1269,7 +1475,11 @@ class GPTModel(nn.Module):
         # Declare all the nodes
         self.p2p = P2P(parallel_context.pp_pg, device=torch.device("cuda"))
         self.random_states = random_states
-        self.tp_mode = parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE
+        self.tp_mode = (
+            parallel_config.tp_mode
+            if parallel_config is not None
+            else TensorParallelLinearMode.ALL_REDUCE
+        )
 
         self.token_embeddings = PipelineBlock(
             p2p=self.p2p,
@@ -1313,7 +1523,10 @@ class GPTModel(nn.Module):
         self.final_layer_norm = PipelineBlock(
             p2p=self.p2p,
             module_builder=TritonLayerNorm,
-            module_kwargs={"normalized_shape": config.hidden_size, "eps": config.layer_norm_epsilon},
+            module_kwargs={
+                "normalized_shape": config.hidden_size,
+                "eps": config.layer_norm_epsilon,
+            },
             module_input_keys={"input"},
             module_output_keys={"hidden_states"},
         )
@@ -1329,9 +1542,11 @@ class GPTModel(nn.Module):
                 "bias": False,
                 # TODO @thomasw21: refactor so that we store that default in a single place.
                 "mode": self.tp_mode,
-                "async_communication": parallel_config.tp_linear_async_communication
-                if parallel_config is not None
-                else False,
+                "async_communication": (
+                    parallel_config.tp_linear_async_communication
+                    if parallel_config is not None
+                    else False
+                ),
             },
             module_input_keys={"x"},
             module_output_keys={"logits"},
@@ -1352,18 +1567,27 @@ class GPTModel(nn.Module):
     ):
         # all tensors are optional as most ranks don't need anything from the dataloader.
 
-        input_embeds = self.token_embeddings(input_ids=input_ids, input_mask=input_mask)["input_embeds"]
+        input_embeds = self.token_embeddings(
+            input_ids=input_ids, input_mask=input_mask
+        )["input_embeds"]
 
         with branch_random_state(
-            self.random_states, "tp_synced", enabled=self.tp_mode == TensorParallelLinearMode.ALL_REDUCE
+            self.random_states,
+            "tp_synced",
+            enabled=self.tp_mode == TensorParallelLinearMode.ALL_REDUCE,
         ):
             hidden_states = self.embeds_dropout(input=input_embeds)["hidden_states"]
 
-        hidden_encoder_states = {"hidden_states": hidden_states, "sequence_mask": input_mask}
+        hidden_encoder_states = {
+            "hidden_states": hidden_states,
+            "sequence_mask": input_mask,
+        }
         for encoder_block in self.decoder:
             hidden_encoder_states = encoder_block(**hidden_encoder_states)
 
-        hidden_states = self.final_layer_norm(input=hidden_encoder_states["hidden_states"])["hidden_states"]
+        hidden_states = self.final_layer_norm(
+            input=hidden_encoder_states["hidden_states"]
+        )["hidden_states"]
 
         sharded_logits = self.lm_head(x=hidden_states)["logits"]
 
@@ -1392,7 +1616,10 @@ class Loss(nn.Module):
         # Megatron by defaults cast everything in fp32. `--f16-lm-cross-entropy` is an option you can use to keep current precision.
         # https://github.com/NVIDIA/Megatron-LM/blob/f267e6186eae1d6e2055b412b00e2e545a8e896a/megatron/model/gpt_model.py#L38
         loss = sharded_cross_entropy(
-            sharded_logits, label_ids.transpose(0, 1).contiguous(), group=self.tp_pg, dtype=torch.float
+            sharded_logits,
+            label_ids.transpose(0, 1).contiguous(),
+            group=self.tp_pg,
+            dtype=torch.float,
         ).transpose(
             0, 1
         )  # TODO @nouamane: case where TP=1 should be simpler
@@ -1463,7 +1690,13 @@ class Starcoder2ForTraining(NanotronModel):
                         (
                             name,
                             # sync across TP group
-                            tuple(sorted(dist.get_process_group_ranks(self.parallel_context.tp_pg))),
+                            tuple(
+                                sorted(
+                                    dist.get_process_group_ranks(
+                                        self.parallel_context.tp_pg
+                                    )
+                                )
+                            ),
                         )
                     ]
                     tie_parameters(
@@ -1483,7 +1716,10 @@ class Starcoder2ForTraining(NanotronModel):
         model = self
         initialized_parameters = set()
         # Handle tensor parallelism
-        module_id_to_prefix = {id(module): f"{module_name}." for module_name, module in model.named_modules()}
+        module_id_to_prefix = {
+            id(module): f"{module_name}."
+            for module_name, module in model.named_modules()
+        }
         # Fix the root_model
         module_id_to_prefix[id(model)] = ""
 
@@ -1519,7 +1755,9 @@ class Starcoder2ForTraining(NanotronModel):
                     raise ValueError(f"Who the fuck is {param_name}?")
             elif isinstance(module, TensorParallelRowLinear):
                 if "weight" == param_name:
-                    nn.init.normal_(module.weight, mean=0.0, std=sigma / math.sqrt(2 * num_layers))
+                    nn.init.normal_(
+                        module.weight, mean=0.0, std=sigma / math.sqrt(2 * num_layers)
+                    )
                 elif "bias" == param_name:
                     param.zero_()
                 else:
@@ -1549,9 +1787,13 @@ class Starcoder2ForTraining(NanotronModel):
             initialized_parameters.add(full_param_name)
 
         assert initialized_parameters == {
-            param.get_tied_info().get_full_name_from_module_id_to_prefix(module_id_to_prefix=module_id_to_prefix)
-            if param.is_tied
-            else name
+            (
+                param.get_tied_info().get_full_name_from_module_id_to_prefix(
+                    module_id_to_prefix=module_id_to_prefix
+                )
+                if param.is_tied
+                else name
+            )
             for name, param in model.named_parameters()
         }, f"Somehow the initialized set of parameters don't match:\n - Expected: { {name for name, _ in model.named_parameters()} }\n - Got: {initialized_parameters}"
 
@@ -1565,23 +1807,35 @@ class Starcoder2ForTraining(NanotronModel):
         # SANITY CHECK: Check ".qkv.kv." params are tied
         for name, kv_param in self.named_parameters():
             if ".qkv.kv." in name:
-                assert kv_param.is_tied, f"{name} is not tied (kv weights/biases should be tied in GPTBigcode)"
+                assert (
+                    kv_param.is_tied
+                ), f"{name} is not tied (kv weights/biases should be tied in GPTBigcode)"
 
     def get_block_compute_costs(self):
         """Computes the compute cost of each block in the model so that we can do a better job of load balancing."""
         model_config = self.config
-        d_ff = model_config.n_inner if model_config.intermediate_size is not None else 4 * model_config.hidden_size
+        d_ff = (
+            model_config.n_inner
+            if model_config.intermediate_size is not None
+            else 4 * model_config.hidden_size
+        )
         d_qkv = model_config.hidden_size // model_config.num_attention_heads
         block_compute_costs = {
             # CausalSelfAttention (qkv proj + attn out) + MLP
-            GPTBlock: 4 * model_config.num_attention_heads * d_qkv * model_config.hidden_size
+            GPTBlock: 4
+            * model_config.num_attention_heads
+            * d_qkv
+            * model_config.hidden_size
             + 2 * d_ff * model_config.hidden_size,
             # This is the last lm_head
-            TensorParallelColumnLinear: model_config.vocab_size * model_config.hidden_size,
+            TensorParallelColumnLinear: model_config.vocab_size
+            * model_config.hidden_size,
         }
         return block_compute_costs
 
-    def get_flops_per_sec(self, iteration_time_in_sec, sequence_length, global_batch_size):
+    def get_flops_per_sec(
+        self, iteration_time_in_sec, sequence_length, global_batch_size
+    ):
         """Get flops per second for a given model"""
         world_size = self.parallel_context.world_pg.size()
         model_flops, hardware_flops = get_flops(
@@ -1589,14 +1843,20 @@ class Starcoder2ForTraining(NanotronModel):
             hidden_size=self.config.hidden_size,
             num_heads=self.config.num_attention_heads,
             vocab_size=self.config.vocab_size,
-            ffn_hidden_size=self.config.n_inner if self.config.n_inner is not None else 4 * self.config.hidden_size,
+            ffn_hidden_size=(
+                self.config.n_inner
+                if self.config.n_inner is not None
+                else 4 * self.config.hidden_size
+            ),
             seq_len=sequence_length,
             batch_size=global_batch_size,
             kv_channels=None,
             glu_activation=False,
         )
         model_flops_per_s = model_flops / (iteration_time_in_sec * world_size * 1e12)
-        hardware_flops_per_s = hardware_flops / (iteration_time_in_sec * world_size * 1e12)
+        hardware_flops_per_s = hardware_flops / (
+            iteration_time_in_sec * world_size * 1e12
+        )
         return model_flops_per_s, hardware_flops_per_s
 
 
@@ -1637,29 +1897,45 @@ def get_flops(
     # decoder
     # self attention (MQA)
     ## q projection
-    decoder_q_proj_flops_fwd = 2 * num_layers * batch_size * seq_len * (hidden_size) * num_heads * kv_channels
+    decoder_q_proj_flops_fwd = (
+        2 * num_layers * batch_size * seq_len * (hidden_size) * num_heads * kv_channels
+    )
     ## kv projection, shared across heads
-    decoder_kv_proj_flops_fwd = 2 * num_layers * batch_size * seq_len * (hidden_size) * 2 * kv_channels
+    decoder_kv_proj_flops_fwd = (
+        2 * num_layers * batch_size * seq_len * (hidden_size) * 2 * kv_channels
+    )
     ## qk logits
-    decoder_qk_logits_flops_fwd = 2 * num_layers * batch_size * num_heads * seq_len * (kv_channels) * seq_len
+    decoder_qk_logits_flops_fwd = (
+        2 * num_layers * batch_size * num_heads * seq_len * (kv_channels) * seq_len
+    )
     ### SWA (sliding window attention / local attention)
     # window_size = 4096
     # decoder_qk_logits_flops_fwd = 2 * num_layers * batch_size * num_heads * seq_len * (kv_channels) * window_size
     ## v logits
-    decoder_v_logits_flops_fwd = 2 * num_layers * batch_size * num_heads * seq_len * (seq_len) * kv_channels
+    decoder_v_logits_flops_fwd = (
+        2 * num_layers * batch_size * num_heads * seq_len * (seq_len) * kv_channels
+    )
     # decoder_v_logits_flops_fwd = 2 * num_layers * batch_size * num_heads * seq_len * (window_size) * kv_channels
     ## attn out
-    decoder_attn_out_flops_fwd = 2 * num_layers * batch_size * num_heads * seq_len * (kv_channels) * hidden_size
+    decoder_attn_out_flops_fwd = (
+        2 * num_layers * batch_size * num_heads * seq_len * (kv_channels) * hidden_size
+    )
     # FF
     ## 1st layer
-    decoder_ffn_1_flops_fwd = 2 * num_layers * batch_size * seq_len * (hidden_size) * ffn_hidden_size
+    decoder_ffn_1_flops_fwd = (
+        2 * num_layers * batch_size * seq_len * (hidden_size) * ffn_hidden_size
+    )
     if glu_activation:
         # 3 matmuls instead of 2 in FFN
         # ref. https://arxiv.org/pdf/2002.05202.pdf
         # Used for example in T5 v1.1
-        decoder_ffn_1_flops_fwd = 4 * num_layers * batch_size * seq_len * (hidden_size) * ffn_hidden_size
+        decoder_ffn_1_flops_fwd = (
+            4 * num_layers * batch_size * seq_len * (hidden_size) * ffn_hidden_size
+        )
     ## 2nd layer
-    decoder_ffn_2_flops_fwd = 2 * num_layers * batch_size * seq_len * (ffn_hidden_size) * hidden_size
+    decoder_ffn_2_flops_fwd = (
+        2 * num_layers * batch_size * seq_len * (ffn_hidden_size) * hidden_size
+    )
 
     decoder_flops_fwd = (
         decoder_q_proj_flops_fwd

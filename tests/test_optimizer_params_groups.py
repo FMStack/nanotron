@@ -6,7 +6,9 @@ import torch.optim as optim
 from helpers.utils import available_gpus, init_distributed, rerun_if_address_is_in_use
 from nanotron.optim.gradient_accumulator import FP32GradientAccumulator
 from nanotron.optim.named_optimizer import NamedOptimizer
-from nanotron.optim.optimizer_from_gradient_accumulator import OptimizerFromGradientAccumulator
+from nanotron.optim.optimizer_from_gradient_accumulator import (
+    OptimizerFromGradientAccumulator,
+)
 from nanotron.parallel.context import ParallelContext
 from nanotron.parallel.parameters import NanotronParameter
 from nanotron.random import set_random_seed
@@ -79,8 +81,22 @@ def test_optimizer_lr_multiple_group():
     lr1, lr2 = 0.1, 0.001
 
     named_params_or_groups = [
-        {"named_params": [(name, param) for name, param in model.named_parameters() if "fc1" in name], "lr": lr1},
-        {"named_params": [(name, param) for name, param in model.named_parameters() if "fc2" in name], "lr": lr2},
+        {
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc1" in name
+            ],
+            "lr": lr1,
+        },
+        {
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc2" in name
+            ],
+            "lr": lr2,
+        },
     ]
 
     optimizer = NamedOptimizer(
@@ -128,7 +144,13 @@ def test_optimizer_lr_weight_decay_one_group():
     named_params_or_groups = []
     for name, param in model.named_parameters():
         named_params_or_groups.append((name, param))
-    named_params_or_groups = [{"named_params": named_params_or_groups, "lr": lr1, "weight_decay": weight_decay}]
+    named_params_or_groups = [
+        {
+            "named_params": named_params_or_groups,
+            "lr": lr1,
+            "weight_decay": weight_decay,
+        }
+    ]
 
     optimizer = NamedOptimizer(
         named_params_or_groups=named_params_or_groups,
@@ -150,8 +172,12 @@ def test_optimizer_lr_weight_decay_one_group():
 
         # Compute gradient manually and apply weight decay
         with torch.no_grad():
-            expected_fc1_weight = (1 - lr1 * weight_decay) * model.fc1.weight - lr1 * model.fc1.weight.grad
-            expected_fc2_weight = (1 - lr1 * weight_decay) * model.fc2.weight - lr1 * model.fc2.weight.grad
+            expected_fc1_weight = (
+                1 - lr1 * weight_decay
+            ) * model.fc1.weight - lr1 * model.fc1.weight.grad
+            expected_fc2_weight = (
+                1 - lr1 * weight_decay
+            ) * model.fc2.weight - lr1 * model.fc2.weight.grad
 
         optimizer.step()
 
@@ -172,12 +198,20 @@ def test_optimizer_lr_weight_decay_multiple_group():
 
     named_params_or_groups = [
         {
-            "named_params": [(name, param) for name, param in model.named_parameters() if "fc1" in name],
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc1" in name
+            ],
             "lr": lr1,
             "weight_decay": weight_decay1,
         },
         {
-            "named_params": [(name, param) for name, param in model.named_parameters() if "fc2" in name],
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc2" in name
+            ],
             "lr": lr2,
             "weight_decay": weight_decay2,
         },
@@ -203,8 +237,12 @@ def test_optimizer_lr_weight_decay_multiple_group():
 
         # Compute gradient manually and apply weight decay
         with torch.no_grad():
-            expected_fc1_weight = (1 - lr1 * weight_decay1) * model.fc1.weight - lr1 * model.fc1.weight.grad
-            expected_fc2_weight = (1 - lr2 * weight_decay2) * model.fc2.weight - lr2 * model.fc2.weight.grad
+            expected_fc1_weight = (
+                1 - lr1 * weight_decay1
+            ) * model.fc1.weight - lr1 * model.fc1.weight.grad
+            expected_fc2_weight = (
+                1 - lr2 * weight_decay2
+            ) * model.fc2.weight - lr2 * model.fc2.weight.grad
 
         optimizer.step()
 
@@ -217,7 +255,9 @@ def test_optimizer_lr_weight_decay_multiple_group():
 
 @pytest.mark.parametrize("half_precision", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("accumulation_steps", [1, 10])
-def test_optimizer_grad_accumulation_lr_one_group(half_precision: torch.dtype, accumulation_steps: int):
+def test_optimizer_grad_accumulation_lr_one_group(
+    half_precision: torch.dtype, accumulation_steps: int
+):
     set_random_seed(42)
     dtype = half_precision
     lr1 = 0.1
@@ -245,7 +285,9 @@ def test_optimizer_grad_accumulation_lr_one_group(half_precision: torch.dtype, a
         )
 
     optimizer = OptimizerFromGradientAccumulator(
-        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(named_parameters=named_params),
+        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(
+            named_parameters=named_params
+        ),
         named_params_or_groups=named_params_or_groups,
         optimizer_builder=optimizer_builder,
     )
@@ -283,7 +325,9 @@ def test_optimizer_grad_accumulation_lr_one_group(half_precision: torch.dtype, a
 
 @pytest.mark.parametrize("half_precision", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("accumulation_steps", [1, 10])
-def test_optimizer_grad_accumulation_lr_multiple_group(half_precision: torch.dtype, accumulation_steps: int):
+def test_optimizer_grad_accumulation_lr_multiple_group(
+    half_precision: torch.dtype, accumulation_steps: int
+):
     set_random_seed(42)
     dtype = half_precision
     lr1, lr2 = 0.1, 0.001
@@ -295,8 +339,22 @@ def test_optimizer_grad_accumulation_lr_multiple_group(half_precision: torch.dty
     model.fc2.weight = NanotronParameter(model.fc2.weight)
 
     named_params_or_groups = [
-        {"named_params": [(name, param) for name, param in model.named_parameters() if "fc1" in name], "lr": lr1},
-        {"named_params": [(name, param) for name, param in model.named_parameters() if "fc2" in name], "lr": lr2},
+        {
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc1" in name
+            ],
+            "lr": lr1,
+        },
+        {
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc2" in name
+            ],
+            "lr": lr2,
+        },
     ]
 
     # Optimizer
@@ -310,7 +368,9 @@ def test_optimizer_grad_accumulation_lr_multiple_group(half_precision: torch.dty
         )
 
     optimizer = OptimizerFromGradientAccumulator(
-        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(named_parameters=named_params),
+        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(
+            named_parameters=named_params
+        ),
         named_params_or_groups=named_params_or_groups,
         optimizer_builder=optimizer_builder,
     )
@@ -348,7 +408,9 @@ def test_optimizer_grad_accumulation_lr_multiple_group(half_precision: torch.dty
 
 @pytest.mark.parametrize("half_precision", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("accumulation_steps", [1, 10])
-def test_optimizer_grad_accumulation_lr_weight_decay_one_group(half_precision: torch.dtype, accumulation_steps: int):
+def test_optimizer_grad_accumulation_lr_weight_decay_one_group(
+    half_precision: torch.dtype, accumulation_steps: int
+):
     set_random_seed(42)
     dtype = half_precision
     lr1 = 0.1
@@ -363,7 +425,13 @@ def test_optimizer_grad_accumulation_lr_weight_decay_one_group(half_precision: t
     named_params_or_groups = []
     for name, param in model.named_parameters():
         named_params_or_groups.append((name, param))
-    named_params_or_groups = [{"named_params": named_params_or_groups, "lr": lr1, "weight_decay": weight_decay}]
+    named_params_or_groups = [
+        {
+            "named_params": named_params_or_groups,
+            "lr": lr1,
+            "weight_decay": weight_decay,
+        }
+    ]
 
     # Optimizer
     def optimizer_builder(inp_param_groups):
@@ -377,7 +445,9 @@ def test_optimizer_grad_accumulation_lr_weight_decay_one_group(half_precision: t
         )
 
     optimizer = OptimizerFromGradientAccumulator(
-        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(named_parameters=named_params),
+        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(
+            named_parameters=named_params
+        ),
         named_params_or_groups=named_params_or_groups,
         optimizer_builder=optimizer_builder,
     )
@@ -399,10 +469,14 @@ def test_optimizer_grad_accumulation_lr_weight_decay_one_group(half_precision: t
             # Manual update weights for ref
             with torch.no_grad():
                 fc1_grad = accumulator.get_grad_buffer(name="fc1.weight").to(dtype)
-                expected_fc1_weight = (1 - lr1 * weight_decay) * model.fc1.weight - lr1 * fc1_grad
+                expected_fc1_weight = (
+                    1 - lr1 * weight_decay
+                ) * model.fc1.weight - lr1 * fc1_grad
 
                 fc2_grad = accumulator.get_grad_buffer(name="fc2.weight").to(dtype)
-                expected_fc2_weight = (1 - lr1 * weight_decay) * model.fc2.weight - lr1 * fc2_grad
+                expected_fc2_weight = (
+                    1 - lr1 * weight_decay
+                ) * model.fc2.weight - lr1 * fc2_grad
 
             optimizer.step()
 
@@ -431,16 +505,25 @@ def test_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
 
     named_params_or_groups = [
         {
-            "named_params": [(name, param) for name, param in model.named_parameters() if "fc1" in name],
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc1" in name
+            ],
             "lr": lr1,
             "weight_decay": weight_decay1,
         },
         {
-            "named_params": [(name, param) for name, param in model.named_parameters() if "fc2" in name],
+            "named_params": [
+                (name, param)
+                for name, param in model.named_parameters()
+                if "fc2" in name
+            ],
             "lr": lr2,
             "weight_decay": weight_decay2,
         },
     ]
+
     # Optimizer
     def optimizer_builder(inp_param_groups):
         return NamedOptimizer(
@@ -453,7 +536,9 @@ def test_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
         )
 
     optimizer = OptimizerFromGradientAccumulator(
-        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(named_parameters=named_params),
+        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(
+            named_parameters=named_params
+        ),
         named_params_or_groups=named_params_or_groups,
         optimizer_builder=optimizer_builder,
     )
@@ -475,10 +560,14 @@ def test_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
             # Manual update weights for ref
             with torch.no_grad():
                 fc1_grad = accumulator.get_grad_buffer(name="fc1.weight").to(dtype)
-                expected_fc1_weight = (1 - lr1 * weight_decay1) * model.fc1.weight - lr1 * fc1_grad
+                expected_fc1_weight = (
+                    1 - lr1 * weight_decay1
+                ) * model.fc1.weight - lr1 * fc1_grad
 
                 fc2_grad = accumulator.get_grad_buffer(name="fc2.weight").to(dtype)
-                expected_fc2_weight = (1 - lr2 * weight_decay2) * model.fc2.weight - lr2 * fc2_grad
+                expected_fc2_weight = (
+                    1 - lr2 * weight_decay2
+                ) * model.fc2.weight - lr2 * fc2_grad
 
             optimizer.step()
 
@@ -496,14 +585,18 @@ def test_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
 def test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
     half_precision: torch.dtype, accumulation_steps: int
 ):
-    init_distributed(tp=1, dp=2, pp=1)(_test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group)(
+    init_distributed(tp=1, dp=2, pp=1)(
+        _test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group
+    )(
         half_precision=half_precision,
         accumulation_steps=accumulation_steps,
     )
 
 
 def _test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
-    parallel_context: ParallelContext, half_precision: torch.dtype, accumulation_steps: int
+    parallel_context: ParallelContext,
+    half_precision: torch.dtype,
+    accumulation_steps: int,
 ):
     set_random_seed(42)
     dtype = half_precision
@@ -523,16 +616,25 @@ def _test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
 
     named_params_or_groups = [
         {
-            "named_params": [(name, param) for name, param in model_ddp.named_parameters() if "fc1" in name],
+            "named_params": [
+                (name, param)
+                for name, param in model_ddp.named_parameters()
+                if "fc1" in name
+            ],
             "lr": lr1,
             "weight_decay": weight_decay1,
         },
         {
-            "named_params": [(name, param) for name, param in model_ddp.named_parameters() if "fc2" in name],
+            "named_params": [
+                (name, param)
+                for name, param in model_ddp.named_parameters()
+                if "fc2" in name
+            ],
             "lr": lr2,
             "weight_decay": weight_decay2,
         },
     ]
+
     # Optimizer
     def optimizer_builder(inp_param_groups):
         return NamedOptimizer(
@@ -545,7 +647,9 @@ def _test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
         )
 
     optimizer = OptimizerFromGradientAccumulator(
-        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(named_parameters=named_params),
+        gradient_accumulator_builder=lambda named_params: FP32GradientAccumulator(
+            named_parameters=named_params
+        ),
         named_params_or_groups=named_params_or_groups,
         optimizer_builder=optimizer_builder,
     )
@@ -566,11 +670,19 @@ def _test_ddp_optimizer_grad_accumulation_lr_weight_decay_multiple_group(
 
             # Manual update weights for ref
             with torch.no_grad():
-                fc1_grad = accumulator.get_grad_buffer(name="module.fc1.weight").to(dtype)
-                expected_fc1_weight = (1 - lr1 * weight_decay1) * model.fc1.weight - lr1 * fc1_grad
+                fc1_grad = accumulator.get_grad_buffer(name="module.fc1.weight").to(
+                    dtype
+                )
+                expected_fc1_weight = (
+                    1 - lr1 * weight_decay1
+                ) * model.fc1.weight - lr1 * fc1_grad
 
-                fc2_grad = accumulator.get_grad_buffer(name="module.fc2.weight").to(dtype)
-                expected_fc2_weight = (1 - lr2 * weight_decay2) * model.fc2.weight - lr2 * fc2_grad
+                fc2_grad = accumulator.get_grad_buffer(name="module.fc2.weight").to(
+                    dtype
+                )
+                expected_fc2_weight = (
+                    1 - lr2 * weight_decay2
+                ) * model.fc2.weight - lr2 * fc2_grad
 
             optimizer.step()
 

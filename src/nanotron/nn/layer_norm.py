@@ -4,7 +4,13 @@ from torch import nn
 
 class TritonLayerNorm(nn.LayerNorm):
     def forward(
-        self, input, residual=None, dropout_p=0.0, prenorm=False, residual_in_fp32=False, return_dropout_mask=False
+        self,
+        input,
+        residual=None,
+        dropout_p=0.0,
+        prenorm=False,
+        residual_in_fp32=False,
+        return_dropout_mask=False,
     ):
         from flash_attn.ops.triton.layer_norm import layer_norm_fn
 
@@ -35,7 +41,13 @@ class TritonRMSNorm(nn.Module):
         nn.init.ones_(self.weight)
 
     def forward(
-        self, input, residual=None, dropout_p=0.0, prenorm=False, residual_in_fp32=False, return_dropout_mask=False
+        self,
+        input,
+        residual=None,
+        dropout_p=0.0,
+        prenorm=False,
+        residual_in_fp32=False,
+        return_dropout_mask=False,
     ):
         from flash_attn.ops.triton.layer_norm import layer_norm_fn
 

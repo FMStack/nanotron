@@ -1,6 +1,8 @@
+format:
+        python3 -m black .
 # Run nanotron's tests and examples's tests
 test:
-	pytest \
+        pytest \
         --color=yes \
         --durations=0 \
         --ignore tests/fp8 \

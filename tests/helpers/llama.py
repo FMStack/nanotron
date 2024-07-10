@@ -82,7 +82,12 @@ def get_llama_training_config(model_config: ModelArgs):
             ),
         ),
         logging=LoggingArgs(),
-        tokens=TokensArgs(sequence_length=16, train_steps=10, micro_batch_size=16, batch_accumulation_per_replica=1),
+        tokens=TokensArgs(
+            sequence_length=16,
+            train_steps=10,
+            micro_batch_size=16,
+            batch_accumulation_per_replica=1,
+        ),
         data_stages=[
             DatasetStageArgs(
                 name="train",
@@ -105,7 +110,6 @@ def get_llama_training_config(model_config: ModelArgs):
 def create_llama_from_config(
     model_config: LlamaConfig, device: torch.device, parallel_context: ParallelContext
 ) -> LlamaForTraining:
-
     """
     Creates and returns a nanotron model.
     If `model_config` is None, then `checkpoint_path` must be set, in which case

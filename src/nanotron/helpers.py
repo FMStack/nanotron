@@ -18,7 +18,13 @@ from torch.profiler import ProfilerActivity, profile, tensorboard_trace_handler
 
 from nanotron import distributed as dist
 from nanotron import logging
-from nanotron.config import Config, DatasetStageArgs, LRSchedulerArgs, OptimizerArgs, ParallelismArgs
+from nanotron.config import (
+    Config,
+    DatasetStageArgs,
+    LRSchedulerArgs,
+    OptimizerArgs,
+    ParallelismArgs,
+)
 from nanotron.distributed import ProcessGroup
 from nanotron.logging import LogItem, log_rank
 from nanotron.models.base import NanotronModel
@@ -41,13 +47,19 @@ from nanotron.random import (
     get_current_random_state,
     get_synced_random_state,
 )
-from nanotron.scaling.parametrization import LearningRateForSP, LearningRateForSpectralMup, ParametrizationMethod
+from nanotron.scaling.parametrization import (
+    LearningRateForSP,
+    LearningRateForSpectralMup,
+    ParametrizationMethod,
+)
 from nanotron.serialize.metadata import TrainingMetadata
 
 logger = logging.get_logger(__name__)
 
 
-def _vocab_size_with_padding(orig_vocab_size: int, pg_size: int, make_vocab_size_divisible_by: int):
+def _vocab_size_with_padding(
+    orig_vocab_size: int, pg_size: int, make_vocab_size_divisible_by: int
+):
     """Pad vocab size so it is divisible by pg_size * make_vocab_size_divisible_by."""
 
     multiple = make_vocab_size_divisible_by * pg_size
@@ -65,9 +77,16 @@ def _vocab_size_with_padding(orig_vocab_size: int, pg_size: int, make_vocab_size
 
 def init_random_states(parallel_config: ParallelismArgs, tp_pg: ProcessGroup):
     # Get synchronized random states
-    if parallel_config is None or parallel_config.tp_mode is TensorParallelLinearMode.ALL_REDUCE:
+    if (
+        parallel_config is None
+        or parallel_config.tp_mode is TensorParallelLinearMode.ALL_REDUCE
+    ):
         random_states = RandomStates(
-            {"tp_synced": get_synced_random_state(random_state=get_current_random_state(), pg=tp_pg)}
+            {
+                "tp_synced": get_synced_random_state(
+                    random_state=get_current_random_state(), pg=tp_pg
+                )
+            }
         )
     else:
         # We don't need to sync across TP when using sequence parallel (REDUCE_SCATTER)
@@ -75,7 +94,9 @@ def init_random_states(parallel_config: ParallelismArgs, tp_pg: ProcessGroup):
     return random_states
 
 
-def lr_scheduler_builder(optimizer: Optimizer, lr_scheduler_args: LRSchedulerArgs, total_training_steps: int):
+def lr_scheduler_builder(
+    optimizer: Optimizer, lr_scheduler_args: LRSchedulerArgs, total_training_steps: int
+):
     if lr_scheduler_args.lr_decay_steps is None:
         lr_decay_steps = total_training_steps
         if lr_scheduler_args.lr_warmup_steps is not None:
@@ -118,25 +139,44 @@ def lr_scheduler_builder(optimizer: Optimizer, lr_scheduler_args: LRSchedulerArg
             return initial_lr
 
         # Warmup phase
-        elif lr_scheduler_args.lr_warmup_style is not None and current_step <= lr_scheduler_args.lr_warmup_steps:
+        elif (
+            lr_scheduler_args.lr_warmup_style is not None
+            and current_step <= lr_scheduler_args.lr_warmup_steps
+        ):
             if lr_scheduler_args.lr_warmup_style == "linear":
-                lmbda = initial_lr * current_step / max(lr_scheduler_args.lr_warmup_steps, 1)
+                lmbda = (
+                    initial_lr
+                    * current_step
+                    / max(lr_scheduler_args.lr_warmup_steps, 1)
+                )
             elif lr_scheduler_args.lr_warmup_style == "constant":
                 lmbda = lr_scheduler_args.learning_rate
             else:
-                raise ValueError(f"Unknown warmup style {lr_scheduler_args.lr_warmup_style}")
+                raise ValueError(
+                    f"Unknown warmup style {lr_scheduler_args.lr_warmup_style}"
+                )
 
         # Optional constant phase at learning_rate
         elif current_step < lr_decay_starting_step:
             lmbda = initial_lr
 
         # Decay phase
-        elif lr_scheduler_args.lr_decay_style is not None and current_step < lr_decay_starting_step + lr_decay_steps:
+        elif (
+            lr_scheduler_args.lr_decay_style is not None
+            and current_step < lr_decay_starting_step + lr_decay_steps
+        ):
             if lr_scheduler_args.lr_decay_style == "cosine":
                 lmbda = (
                     lr_scheduler_args.min_decay_lr
                     + (initial_lr - lr_scheduler_args.min_decay_lr)
-                    * (1 + math.cos(math.pi * (current_step - lr_decay_starting_step) / lr_decay_steps))
+                    * (
+                        1
+                        + math.cos(
+                            math.pi
+                            * (current_step - lr_decay_starting_step)
+                            / lr_decay_steps
+                        )
+                    )
                     / 2
                 )
             elif lr_scheduler_args.lr_decay_style == "linear":
@@ -147,13 +187,18 @@ def lr_scheduler_builder(optimizer: Optimizer, lr_scheduler_args: LRSchedulerArg
                     / lr_decay_steps
                 )
             elif lr_scheduler_args.lr_decay_style == "1-sqrt":
-                lmbda = (
-                    lr_scheduler_args.min_decay_lr
-                    + (initial_lr - lr_scheduler_args.min_decay_lr)
-                    * (1 - math.sqrt((current_step - lr_decay_starting_step) / lr_decay_steps))
+                lmbda = lr_scheduler_args.min_decay_lr + (
+                    initial_lr - lr_scheduler_args.min_decay_lr
+                ) * (
+                    1
+                    - math.sqrt(
+                        (current_step - lr_decay_starting_step) / lr_decay_steps
+                    )
                 )
             else:
-                raise ValueError(f"Unknown decay style {lr_scheduler_args.lr_decay_style}")
+                raise ValueError(
+                    f"Unknown decay style {lr_scheduler_args.lr_decay_style}"
+                )
 
         # Optional constant phase at min_decay_lr
         else:
@@ -200,12 +245,16 @@ def get_custom_weight_decay_for_named_parameters(
 
     for name, param in named_parameters:
         if param.is_tied:
-            param.get_tied_info().get_full_name_from_module_id_to_prefix(module_id_to_prefix=module_id_to_prefix)
+            param.get_tied_info().get_full_name_from_module_id_to_prefix(
+                module_id_to_prefix=module_id_to_prefix
+            )
         else:
             pass
 
         if any(name.endswith(substring) for substring in exclude_named_params):
-            named_param_groups_with_custom_weight_decay.append({"named_params": [(name, param)], "weight_decay": 0.0})
+            named_param_groups_with_custom_weight_decay.append(
+                {"named_params": [(name, param)], "weight_decay": 0.0}
+            )
         else:
             named_param_groups_with_custom_weight_decay.append(
                 {"named_params": [(name, param)], "weight_decay": weight_decay}
@@ -232,7 +281,10 @@ def get_custom_lr_for_named_parameters(
     in others we use a custom learning rate for each parameter (eg: spectral µTransfer).
     """
 
-    assert parametrization_method in [ParametrizationMethod.SPECTRAL_MUP, ParametrizationMethod.STANDARD]
+    assert parametrization_method in [
+        ParametrizationMethod.SPECTRAL_MUP,
+        ParametrizationMethod.STANDARD,
+    ]
 
     lr_mapper_cls = (
         LearningRateForSpectralMup
@@ -249,7 +301,9 @@ def get_custom_lr_for_named_parameters(
 
     # NOTE: since in the case of pipeline parallelism, each rank only has a subset of the model
     # so we only get the parameters that are in the current rank
-    learning_rate_mapper = lr_mapper_cls(names_to_modules=model.named_modules_in_pp_rank, lr=lr)
+    learning_rate_mapper = lr_mapper_cls(
+        names_to_modules=model.named_modules_in_pp_rank, lr=lr
+    )
 
     named_param_groups_with_custom_lr = []
     for (
@@ -257,8 +311,12 @@ def get_custom_lr_for_named_parameters(
         param,
     ) in named_parameters:
         learning_rate = learning_rate_mapper.get_lr(name, param)
-        assert isinstance(learning_rate, float), f"Expected a float, got {learning_rate} for parameter {name}"
-        named_param_groups_with_custom_lr.append({"named_params": [(name, param)], "lr": learning_rate})
+        assert isinstance(
+            learning_rate, float
+        ), f"Expected a float, got {learning_rate} for parameter {name}"
+        named_param_groups_with_custom_lr.append(
+            {"named_params": [(name, param)], "lr": learning_rate}
+        )
 
     log_rank(
         f"[Optimizer Building] Creating {len(named_param_groups_with_custom_lr)} param groups with custom learning rates",
@@ -301,9 +359,14 @@ def init_optimizer_and_grad_accumulator(
     parallel_context: ParallelContext,
 ) -> Tuple[BaseOptimizer, GradientAccumulator]:
     # Unwrap DDP
-    unwrapped_model: NanotronModel = model.module if isinstance(model, DistributedDataParallel) else model
+    unwrapped_model: NanotronModel = (
+        model.module if isinstance(model, DistributedDataParallel) else model
+    )
 
-    module_id_to_prefix = {id(module): f"{module_name}." for module_name, module in unwrapped_model.named_modules()}
+    module_id_to_prefix = {
+        id(module): f"{module_name}."
+        for module_name, module in unwrapped_model.named_modules()
+    }
     # Fix the root_model
     module_id_to_prefix[id(unwrapped_model)] = ""
 
@@ -322,7 +385,9 @@ def init_optimizer_and_grad_accumulator(
         weight_decay=optimizer_args.weight_decay,
     )
 
-    named_param_groups = merge_named_param_groups(named_param_groups_with_lr, named_param_groups_with_weight_decay)
+    named_param_groups = merge_named_param_groups(
+        named_param_groups_with_lr, named_param_groups_with_weight_decay
+    )
 
     # Basic optimizer builder
     def basic_optimizer_builder(named_param_groups):
@@ -336,7 +401,10 @@ def init_optimizer_and_grad_accumulator(
                     lr=optimizer_args.learning_rate_scheduler.learning_rate,
                     weight_decay=optimizer_args.weight_decay,
                     eps=optimizer_args.optimizer_factory.adam_eps,
-                    betas=(optimizer_args.optimizer_factory.adam_beta1, optimizer_args.optimizer_factory.adam_beta2),
+                    betas=(
+                        optimizer_args.optimizer_factory.adam_beta1,
+                        optimizer_args.optimizer_factory.adam_beta2,
+                    ),
                     fused=optimizer_args.optimizer_factory.torch_adam_is_fused,
                 )
 
@@ -350,7 +418,9 @@ def init_optimizer_and_grad_accumulator(
                 )
 
         else:
-            raise ValueError(f"Optimizer {optimizer_args.optimizer_factory.name} is not supported")
+            raise ValueError(
+                f"Optimizer {optimizer_args.optimizer_factory.name} is not supported"
+            )
 
         return NamedOptimizer(
             named_params_or_groups=named_param_groups,
@@ -395,7 +465,9 @@ def init_optimizer_and_grad_accumulator(
             len(optimizer.zero_named_param_groups) > 0
             and len(optimizer.zero_named_param_groups[0]["named_params"]) > 0
         ):
-            optim_model_param_name, optim_model_param = optimizer.zero_named_param_groups[0]["named_params"][0]
+            optim_model_param_name, optim_model_param = (
+                optimizer.zero_named_param_groups[0]["named_params"][0]
+            )
             if isinstance(model, DistributedDataParallel):
                 optim_model_param_name = f"module.{optim_model_param_name}"
             param = model.get_parameter(optim_model_param_name)
@@ -424,23 +496,28 @@ def init_optimizer_and_grad_accumulator(
                 dp_pg=parallel_context.dp_pg,
                 accumulator=grad_accumulator,
                 param_id_to_name={
-                    id(param): param.get_tied_info().get_full_name_from_module_id_to_prefix(
-                        module_id_to_prefix=module_id_to_prefix
+                    id(param): (
+                        param.get_tied_info().get_full_name_from_module_id_to_prefix(
+                            module_id_to_prefix=module_id_to_prefix
+                        )
+                        if param.is_tied
+                        else name
                     )
-                    if param.is_tied
-                    else name
                     for name, param in unwrapped_model.named_parameters()
                 },
             ),
             hook=get_fp32_accum_hook(
-                reduce_scatter=optimizer.inherit_from(ZeroDistributedOptimizer), reduce_op=dist.ReduceOp.AVG
+                reduce_scatter=optimizer.inherit_from(ZeroDistributedOptimizer),
+                reduce_op=dist.ReduceOp.AVG,
             ),
         )
 
     return optimizer, grad_accumulator
 
 
-def test_equal_dict(first: Dict, second: Dict, sub_paths: Optional[List[str]] = None) -> None:
+def test_equal_dict(
+    first: Dict, second: Dict, sub_paths: Optional[List[str]] = None
+) -> None:
     """Raise if doesn't match."""
 
     if sub_paths is None:
@@ -448,16 +525,22 @@ def test_equal_dict(first: Dict, second: Dict, sub_paths: Optional[List[str]] = 
 
     first_keys = set(first.keys())
     second_keys = set(second.keys())
-    assert first_keys == second_keys, f"Keys don't match.\nFirst: {first_keys}\nSecond: {second_keys}"
+    assert (
+        first_keys == second_keys
+    ), f"Keys don't match.\nFirst: {first_keys}\nSecond: {second_keys}"
     for key in first_keys:
         first_elt = first[key]
         second_elt = second[key]
 
         if isinstance(first_elt, dict):
-            assert isinstance(second_elt, dict), f"{first_elt} doesn't match {second_elt}"
+            assert isinstance(
+                second_elt, dict
+            ), f"{first_elt} doesn't match {second_elt}"
             test_equal_dict(first_elt, second_elt, sub_paths=sub_paths + [str(key)])
         elif isinstance(first_elt, torch.Tensor):
-            assert isinstance(second_elt, torch.Tensor), f"{first_elt} doesn't match {second_elt}"
+            assert isinstance(
+                second_elt, torch.Tensor
+            ), f"{first_elt} doesn't match {second_elt}"
             torch.testing.assert_close(
                 first_elt,
                 second_elt,
@@ -475,13 +558,16 @@ def get_profiler(config: Config):
     if config.profiler is not None:
         if config.profiler.profiler_export_path is not None:
             on_trace_ready = tensorboard_trace_handler(
-                config.profiler.profiler_export_path / datetime.now().strftime("%Y%m%d-%H%M%S")
+                config.profiler.profiler_export_path
+                / datetime.now().strftime("%Y%m%d-%H%M%S")
             )
         else:
             on_trace_ready = None
         prof = profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            schedule=torch.profiler.schedule(wait=1, warmup=1, active=1, repeat=1, skip_first=3),
+            schedule=torch.profiler.schedule(
+                wait=1, warmup=1, active=1, repeat=1, skip_first=3
+            ),
             on_trace_ready=on_trace_ready,
             # record_shapes=True,
             # profile_memory=True,
@@ -530,7 +616,10 @@ def get_all_comps(n: int) -> List[List[List[int]]]:
 
 
 def test_all_pair_to_pair(
-    parallel_context: ParallelContext, throughput_size: int, throughput_iters: int, only_node_to_node: bool = True
+    parallel_context: ParallelContext,
+    throughput_size: int,
+    throughput_iters: int,
+    only_node_to_node: bool = True,
 ):
     """Test all pair-to-pair GPUs throughput
 
@@ -558,14 +647,20 @@ def test_all_pair_to_pair(
             if only_node_to_node and (a % 8 != 0 or b % 8 != 0):
                 # We only check node-to-node throughput
                 continue
-            test_tensor = torch.zeros((int(throughput_size),), dtype=torch.uint8, device=torch.device("cuda"))
+            test_tensor = torch.zeros(
+                (int(throughput_size),), dtype=torch.uint8, device=torch.device("cuda")
+            )
             for k in range(throughput_iters):
                 pre = time.perf_counter()
                 torch.cuda.synchronize()
                 if wr == a:
-                    dist.send(test_tensor, b, group=parallel_context.world_pg, tag=i + k)
+                    dist.send(
+                        test_tensor, b, group=parallel_context.world_pg, tag=i + k
+                    )
                 elif wr == b:
-                    dist.recv(test_tensor, a, group=parallel_context.world_pg, tag=i + k)
+                    dist.recv(
+                        test_tensor, a, group=parallel_context.world_pg, tag=i + k
+                    )
                 torch.cuda.synchronize()
                 duration = time.perf_counter() - pre
             del test_tensor
@@ -600,7 +695,11 @@ def create_table_log(
     return [
         LogItem("job_id", slurm_job_id, "s"),
         LogItem("name", config.general.run, "s"),
-        LogItem("nodes", math.ceil(parallel_context.world_pg.size() / torch.cuda.device_count()), "d"),
+        LogItem(
+            "nodes",
+            math.ceil(parallel_context.world_pg.size() / torch.cuda.device_count()),
+            "d",
+        ),
         LogItem("seq_len", config.tokens.sequence_length, "d"),
         LogItem("mbs", config.tokens.micro_batch_size, "d"),
         LogItem("batch_accum", config.tokens.batch_accumulation_per_replica, "d"),
@@ -615,12 +714,21 @@ def create_table_log(
 
 
 def create_table_output(table_log, column_widths):
-    header_row = "| " + " | ".join([item.tag.ljust(width) for item, width in zip(table_log, column_widths)]) + " |"
+    header_row = (
+        "| "
+        + " | ".join(
+            [item.tag.ljust(width) for item, width in zip(table_log, column_widths)]
+        )
+        + " |"
+    )
     separator_row = "| " + " | ".join(["-" * width for width in column_widths]) + " |"
     data_row = (
         "| "
         + " | ".join(
-            [f"{item.scalar_value:{item.log_format}}".ljust(width) for item, width in zip(table_log, column_widths)]
+            [
+                f"{item.scalar_value:{item.log_format}}".ljust(width)
+                for item, width in zip(table_log, column_widths)
+            ]
         )
         + " |"
     )
@@ -633,7 +741,9 @@ def write_to_csv(csv_filename, table_log, model_tflops, slurm_job_id):
         with open(csv_filename, mode="w") as fo:
             writer = csv.writer(fo)
             writer.writerow([item.tag for item in table_log])
-            writer.writerow([f"{item.scalar_value:{item.log_format}}" for item in table_log])
+            writer.writerow(
+                [f"{item.scalar_value:{item.log_format}}" for item in table_log]
+            )
     # elif model_tflops > 0:
     #     # replace line with same job_id
     #     with open(csv_filename, mode="r") as fi:
@@ -648,7 +758,9 @@ def write_to_csv(csv_filename, table_log, model_tflops, slurm_job_id):
     else:
         with open(csv_filename, mode="a") as fo:
             writer = csv.writer(fo)
-            writer.writerow([f"{item.scalar_value:{item.log_format}}" for item in table_log])
+            writer.writerow(
+                [f"{item.scalar_value:{item.log_format}}" for item in table_log]
+            )
 
 
 def log_throughput(
@@ -662,9 +774,18 @@ def log_throughput(
     slurm_job_id = os.environ.get("SLURM_JOB_ID", "N/A")
 
     table_log = create_table_log(
-        config, parallel_context, model_tflops, hardware_tflops, tokens_per_sec, bandwidth, slurm_job_id
+        config,
+        parallel_context,
+        model_tflops,
+        hardware_tflops,
+        tokens_per_sec,
+        bandwidth,
+        slurm_job_id,
     )
-    column_widths = [max(len(item.tag), len(f"{item.scalar_value:{item.log_format}}")) for item in table_log]
+    column_widths = [
+        max(len(item.tag), len(f"{item.scalar_value:{item.log_format}}"))
+        for item in table_log
+    ]
     table_output = create_table_output(table_log, column_widths)
 
     log_rank(
@@ -675,7 +796,9 @@ def log_throughput(
     )
 
     if dist.get_rank(parallel_context.world_pg) == 0:
-        write_to_csv(config.general.benchmark_csv_path, table_log, model_tflops, slurm_job_id)
+        write_to_csv(
+            config.general.benchmark_csv_path, table_log, model_tflops, slurm_job_id
+        )
 
 
 def compute_remain_train_steps_of_a_data_stage_from_ckp(
@@ -691,16 +814,27 @@ def compute_remain_train_steps_of_a_data_stage_from_ckp(
     if is_last_stage() is True:
         total_train_steps = config.tokens.train_steps
     else:
-        next_stage = next((s for s in config.data_stages if s.start_training_step > stage.start_training_step), None)
+        next_stage = next(
+            (
+                s
+                for s in config.data_stages
+                if s.start_training_step > stage.start_training_step
+            ),
+            None,
+        )
         total_train_steps = next_stage.start_training_step
-    
+
     if metadata.last_train_step > stage.start_training_step:
         # NOTE: if the last_train_step is larger than the start_training_step of the current stage,
         # it means that the training has already passed this stage
         # so there is no remaining steps
         return 0
     else:
-        last_train_steps = metadata.last_train_step if is_resume_from_training() else stage.start_training_step
+        last_train_steps = (
+            metadata.last_train_step
+            if is_resume_from_training()
+            else stage.start_training_step
+        )
         return total_train_steps - last_train_steps
 
 
@@ -709,6 +843,10 @@ def get_consumed_train_samples_of_a_data_stage_from_ckp(
 ) -> Optional[int]:
     start_training_step = stage.start_training_step
     return next(
-        (s.consumed_train_samples for s in metadata.data_stages if s.start_training_step == start_training_step),
+        (
+            s.consumed_train_samples
+            for s in metadata.data_stages
+            if s.start_training_step == start_training_step
+        ),
         None,
     )

@@ -19,7 +19,9 @@ class ParallelContext:
         backend: DistributedBackend = "nccl",
     ):
         """Initialize parallel context."""
-        num_gpus_per_model = tensor_parallel_size * pipeline_parallel_size * expert_parallel_size
+        num_gpus_per_model = (
+            tensor_parallel_size * pipeline_parallel_size * expert_parallel_size
+        )
         world_size = int(os.environ["WORLD_SIZE"])
 
         assert (
@@ -36,7 +38,9 @@ class ParallelContext:
             )
 
         if not dist.is_available():
-            raise ValueError("torch.distributed is not available as a package, please install it.")
+            raise ValueError(
+                "torch.distributed is not available as a package, please install it."
+            )
 
         self.tensor_parallel_size = tensor_parallel_size
         self.pipeline_parallel_size = pipeline_parallel_size
@@ -77,14 +81,25 @@ class ParallelContext:
         self.world_ranks_to_pg = {}
 
         # Relevant process groups containing the current rank
-        self.tp_pg = self.create_new_group(ranks.transpose((0, 1, 2, 3)).reshape((-1, self.tensor_parallel_size)))
-        self.dp_pg = self.create_new_group(ranks.transpose((3, 0, 1, 2)).reshape((-1, self.data_parallel_size)))
-        self.pp_pg = self.create_new_group(ranks.transpose((2, 3, 0, 1)).reshape((-1, self.pipeline_parallel_size)))
-        self.expert_pg = self.create_new_group(ranks.transpose((1, 2, 3, 0)).reshape((-1, self.expert_parallel_size)))
+        self.tp_pg = self.create_new_group(
+            ranks.transpose((0, 1, 2, 3)).reshape((-1, self.tensor_parallel_size))
+        )
+        self.dp_pg = self.create_new_group(
+            ranks.transpose((3, 0, 1, 2)).reshape((-1, self.data_parallel_size))
+        )
+        self.pp_pg = self.create_new_group(
+            ranks.transpose((2, 3, 0, 1)).reshape((-1, self.pipeline_parallel_size))
+        )
+        self.expert_pg = self.create_new_group(
+            ranks.transpose((1, 2, 3, 0)).reshape((-1, self.expert_parallel_size))
+        )
 
         # model parallel group = combination of tp and pp and exp for a given dp rank
         self.mp_pg = self.create_new_group(
-            [ranks[:, :, dp_rank, :].reshape(-1) for dp_rank in range(self.data_parallel_size)]
+            [
+                ranks[:, :, dp_rank, :].reshape(-1)
+                for dp_rank in range(self.data_parallel_size)
+            ]
         )
 
         self.tp_and_expert_pg = self.create_new_group(

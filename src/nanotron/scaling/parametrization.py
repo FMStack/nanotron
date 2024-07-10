@@ -116,7 +116,9 @@ class SpectralMupParametrizator(Parametrizator):
         else:
             raise ValueError(f"Unknown module {module}")
 
-        std = SpectralMupParametrizator._compute_spectral_std(std=self.std, fan_in=fan_in, fan_out=fan_out)
+        std = SpectralMupParametrizator._compute_spectral_std(
+            std=self.std, fan_in=fan_in, fan_out=fan_out
+        )
         init.normal_(data, mean=0.0, std=std)
 
     def _parametrize_layer_norm(self, param_name: str, module: nn.Module):

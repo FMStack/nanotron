@@ -1,5 +1,7 @@
 <h1 align="center">⚡️ Nanotron</h1>
 
+(This is an opinionated fork of [Nanotron])
+
 <p align="center">
     <a href="https://github.com/huggingface/nanotron/releases">
         <img alt="GitHub release" src="https://img.shields.io/github/release/huggingface/nanotron.svg">

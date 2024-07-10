@@ -3,7 +3,11 @@ from typing import Union
 
 import pytest
 import torch
-from helpers.llama import TINY_LLAMA_CONFIG, create_llama_from_config, get_llama_training_config
+from helpers.llama import (
+    TINY_LLAMA_CONFIG,
+    create_llama_from_config,
+    get_llama_training_config,
+)
 from helpers.utils import init_distributed, rerun_if_address_is_in_use
 from nanotron.config import ModelArgs, RandomInit, SpectralMupInit
 from nanotron.parallel import ParallelContext
@@ -14,7 +18,9 @@ from nanotron.scaling.parametrization import ParametrizationMethod
 @pytest.mark.parametrize("parametrization_method", [ParametrizationMethod.SPECTRAL_MUP])
 @pytest.mark.skip
 @rerun_if_address_is_in_use()
-def test_parametrization(tp: int, dp: int, pp: int, parametrization_method: ParametrizationMethod):
+def test_parametrization(
+    tp: int, dp: int, pp: int, parametrization_method: ParametrizationMethod
+):
     if parametrization_method == ParametrizationMethod.STANDARD:
         init_method = RandomInit(std=1.0)
     elif parametrization_method == ParametrizationMethod.SPECTRAL_MUP:
@@ -32,7 +38,9 @@ def _test_parametrization(
     parametrization_method: ParametrizationMethod,
 ):
     def spectral_std(fan_in: int, fan_out: int):
-        return torch.tensor((1.0 / math.sqrt(fan_in)) * min(1, math.sqrt(fan_out / fan_in)))
+        return torch.tensor(
+            (1.0 / math.sqrt(fan_in)) * min(1, math.sqrt(fan_out / fan_in))
+        )
 
     model_args = ModelArgs(init_method=init_method, model_config=TINY_LLAMA_CONFIG)
     config = get_llama_training_config(model_args)
@@ -47,7 +55,10 @@ def _test_parametrization(
     hidden_size = TINY_LLAMA_CONFIG.hidden_size
     interdimte_size = TINY_LLAMA_CONFIG.intermediate_size
 
-    o_proj_infeatures = llama.model.decoder[0].pp_block.attn.o_proj.in_features * parallel_context.tensor_parallel_size
+    o_proj_infeatures = (
+        llama.model.decoder[0].pp_block.attn.o_proj.in_features
+        * parallel_context.tensor_parallel_size
+    )
     NAME_TO_EXPECTED_STD = {
         "input_layernorm": torch.tensor(0.0),
         "post_attention_layernorm": torch.tensor(0.0),

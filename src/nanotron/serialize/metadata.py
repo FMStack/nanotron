@@ -48,14 +48,18 @@ class TrainingMetadata:
 
     def __post_init__(self):
         # NOTE: this is a sanity check after loading a trained checkpoint
-        total_consumed_samples_across_stages = sum(stage.consumed_train_samples for stage in self.data_stages)
+        total_consumed_samples_across_stages = sum(
+            stage.consumed_train_samples for stage in self.data_stages
+        )
         assert (
             self.consumed_train_samples == total_consumed_samples_across_stages
         ), "Mismatch between the total consumed samples and the sum of consumed samples across stages! Something went wrong in the training."
 
         # TODO(xrsrke): remove this once we entirely remove non-data-stage training
         if self.last_stage_idx is not None:
-            assert self.data_stages is not None, "data_stages should not be None if last_stage_idx is not None"
+            assert (
+                self.data_stages is not None
+            ), "data_stages should not be None if last_stage_idx is not None"
 
 
 @dataclasses.dataclass
@@ -81,7 +85,9 @@ class TensorMetadata:
         cast=[Version],
         type_hooks={
             Tuple[SlicesPair, ...]: SlicesPair.tuple_from_str,
-            Tuple[int, ...]: lambda x: torch.Size(int(size) for size in x.strip("()").split(",") if size),
+            Tuple[int, ...]: lambda x: torch.Size(
+                int(size) for size in x.strip("()").split(",") if size
+            ),
         },
         strict=True,
     )
@@ -89,7 +95,9 @@ class TensorMetadata:
     def to_str_dict(self) -> Dict[str, str]:
         return {
             "version": str(self.version),
-            "local_global_slices_pairs": SlicesPair.tuple_to_str(self.local_global_slices_pairs),
+            "local_global_slices_pairs": SlicesPair.tuple_to_str(
+                self.local_global_slices_pairs
+            ),
             "unsharded_shape": str(tuple(self.unsharded_shape)),
         }
 
@@ -125,7 +133,11 @@ def to_list(list_: Union[List, Tuple], type_hooks: Dict[Type, Callable[[Any], An
     return list_.__class__((process_type(elt, type_hooks=type_hooks) for elt in list_))
 
 
-def save_meta(parallel_context: ParallelContext, root_folder: Path, training_metadata: TrainingMetadata):
+def save_meta(
+    parallel_context: ParallelContext,
+    root_folder: Path,
+    training_metadata: TrainingMetadata,
+):
     assert isinstance(training_metadata, TrainingMetadata)
 
     if dist.get_rank(parallel_context.world_pg) != 0:
@@ -140,13 +152,17 @@ def save_meta(parallel_context: ParallelContext, root_folder: Path, training_met
     )
 
     # There are some types that require manual casting in order to work correctly.
-    processed_metadata = process_type(dataclasses.asdict(checkpoint_metadata), type_hooks={Version: lambda x: str(x)})
+    processed_metadata = process_type(
+        dataclasses.asdict(checkpoint_metadata), type_hooks={Version: lambda x: str(x)}
+    )
 
     with open(root_folder / CHECKPOINT_FILE_NAME, mode="w") as fo:
         json.dump(processed_metadata, fo, indent=2, sort_keys=True)
 
 
-def load_meta(parallel_context: ParallelContext, root_folder: Path) -> CheckpointMetadata:
+def load_meta(
+    parallel_context: ParallelContext, root_folder: Path
+) -> CheckpointMetadata:
     with open(root_folder / CHECKPOINT_FILE_NAME, mode="r") as fi:
         checkpoint_metadata = json.load(fi)
         checkpoint_metadata = from_dict(

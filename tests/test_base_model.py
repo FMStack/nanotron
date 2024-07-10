@@ -1,7 +1,11 @@
 import pytest
 import torch
 import torch.distributed as dist
-from helpers.llama import TINY_LLAMA_CONFIG, create_llama_from_config, get_llama_training_config
+from helpers.llama import (
+    TINY_LLAMA_CONFIG,
+    create_llama_from_config,
+    get_llama_training_config,
+)
 from helpers.utils import init_distributed, rerun_if_address_is_in_use
 from nanotron.config import Config, ModelArgs, RandomInit
 from nanotron.parallel import ParallelContext
@@ -13,10 +17,14 @@ from torch import nn
 @pytest.mark.skip
 @rerun_if_address_is_in_use()
 def test_get_named_modules_in_pp_rank(tp: int, dp: int, pp: int):
-    model_args = ModelArgs(init_method=RandomInit(std=1.0), model_config=TINY_LLAMA_CONFIG)
+    model_args = ModelArgs(
+        init_method=RandomInit(std=1.0), model_config=TINY_LLAMA_CONFIG
+    )
     config = get_llama_training_config(model_args)
 
-    init_distributed(tp=tp, dp=dp, pp=pp)(_test_get_named_modules_in_pp_rank)(config=config)
+    init_distributed(tp=tp, dp=dp, pp=pp)(_test_get_named_modules_in_pp_rank)(
+        config=config
+    )
 
 
 def _test_get_named_modules_in_pp_rank(

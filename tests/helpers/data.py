@@ -29,11 +29,15 @@ def create_dataset_paths(tmp_dir: str, quantity: int):
     return json_dataset_path, mmap_dataset_path
 
 
-def create_dummy_json_dataset(path_to_json: str, dummy_text: str, n_samples: int = 50000):
+def create_dummy_json_dataset(
+    path_to_json: str, dummy_text: str, n_samples: int = 50000
+):
 
     with open(path_to_json + ".json", "a") as json_file:
         for sample in range(n_samples):
-            sample_dict = {"text": f"[{sample}] Hello! Im sample {sample}! And this is my dummy text: {dummy_text}"}
+            sample_dict = {
+                "text": f"[{sample}] Hello! Im sample {sample}! And this is my dummy text: {dummy_text}"
+            }
             json_file.write(json.dumps(sample_dict))
             json_file.write("\n")
 
@@ -53,7 +57,10 @@ def preprocess_dummy_dataset(path_to_json: str, tokenizer: str):
 
 
 def assert_batch_dataloader(
-    batch: dict, parallel_context: ParallelContext, micro_batch_size: int, sequence_length: int
+    batch: dict,
+    parallel_context: ParallelContext,
+    micro_batch_size: int,
+    sequence_length: int,
 ):
     """
     batch (dict): Batch produced from the Dataloader, with keys input_ids, input_mask, label_ids, label_mask
@@ -64,16 +71,18 @@ def assert_batch_dataloader(
 
         # Assert that inputs are only present in input_pp_rank and outputs in output_pp_rank
         input_pp_rank, output_pp_rank = 0, int(parallel_context.pp_pg.size() - 1)
-        if dist.get_rank(parallel_context.pp_pg) == input_pp_rank and element.startswith("input_"):
+        if dist.get_rank(
+            parallel_context.pp_pg
+        ) == input_pp_rank and element.startswith("input_"):
             assert isinstance(tensor, torch.Tensor)
-        elif dist.get_rank(parallel_context.pp_pg) == output_pp_rank and element.startswith("label_"):
+        elif dist.get_rank(
+            parallel_context.pp_pg
+        ) == output_pp_rank and element.startswith("label_"):
             assert isinstance(tensor, torch.Tensor)
         else:
             assert isinstance(tensor, TensorPointer)
 
-        data_class = (
-            0  # 0 if tensor is from the ids, 1 if TensorPointer and 2 if mask. Used in the data parallel group check
-        )
+        data_class = 0  # 0 if tensor is from the ids, 1 if TensorPointer and 2 if mask. Used in the data parallel group check
 
         # Check shape of mask and ids tensors
         if isinstance(tensor, torch.Tensor):
@@ -110,11 +119,16 @@ def compute_hash(identifier: OrderedDict, n_digit: int = 8) -> int:
     """
     unique_description = json.dumps(identifier, indent=4)
     # Create n_digit description hash
-    unique_description_hash = int(hashlib.sha256(unique_description.encode("utf-8")).hexdigest(), 16) % 10**n_digit
+    unique_description_hash = (
+        int(hashlib.sha256(unique_description.encode("utf-8")).hexdigest(), 16)
+        % 10**n_digit
+    )
     return unique_description_hash
 
 
-def assert_nanoset_sync_across_all_ranks(nanoset: Nanoset, parallel_context: ParallelContext):
+def assert_nanoset_sync_across_all_ranks(
+    nanoset: Nanoset, parallel_context: ParallelContext
+):
     """
     Checks that the same Nanoset is created in all processes
     """

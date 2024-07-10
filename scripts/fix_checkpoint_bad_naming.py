@@ -42,7 +42,9 @@ def update_checkpoint(checkpoint_dir: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Update checkpoint from 1.3 to 1.4")
-    parser.add_argument("checkpoint_dir", type=Path, help="Path to the checkpoint directory")
+    parser.add_argument(
+        "checkpoint_dir", type=Path, help="Path to the checkpoint directory"
+    )
     args = parser.parse_args()
     update_checkpoint(args.checkpoint_dir)
 

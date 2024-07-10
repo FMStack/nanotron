@@ -38,7 +38,9 @@ class LlamaConfig:
     hidden_size: int = 4096
     initializer_range: float = 0.02
     intermediate_size: int = 11008
-    is_llama_config: bool = True  # We use this help differentiate models in yaml/python conversion
+    is_llama_config: bool = (
+        True  # We use this help differentiate models in yaml/python conversion
+    )
     max_position_embeddings: int = 2048
     num_attention_heads: int = 32
     num_hidden_layers: int = 32
@@ -85,7 +87,9 @@ class Starcoder2Config:
     hidden_size: int = 2048
     initializer_range: float = 0.02  # TODO: not used
     intermediate_size: Optional[int] = None
-    is_starcoder2_config: bool = True  # We use this help differentiate models in yaml/python conversion
+    is_starcoder2_config: bool = (
+        True  # We use this help differentiate models in yaml/python conversion
+    )
     layer_norm_epsilon: float = 1e-05
     max_position_embeddings: int = 4096
     multi_query: bool = False  # MQA
@@ -106,8 +110,12 @@ class Starcoder2Config:
             self.global_attn_layers = []
 
         if self.grouped_query:
-            assert self.num_kv_heads is not None, "num_kv_heads must be specified for grouped query"
-            assert self.multi_query is False, "Cannot use both multi_query and grouped_query"
+            assert (
+                self.num_kv_heads is not None
+            ), "num_kv_heads must be specified for grouped query"
+            assert (
+                self.multi_query is False
+            ), "Cannot use both multi_query and grouped_query"
 
         if not self.multi_query and not self.grouped_query:
             self.multi_query = True

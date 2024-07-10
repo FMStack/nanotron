@@ -10,6 +10,7 @@ The folder that contains the evaluation results should have the following struct
     ...
 ...
 """
+
 import argparse
 import json
 import os
@@ -20,7 +21,13 @@ import wandb
 
 def run(current_path: Path):
     def compute_avg_acc_of_a_benchmark(data, benchmark_prefix):
-        sum_acc, sum_acc_norm, sum_acc_stderr, sum_acc_norm_stderr, count = 0, 0, 0, 0, 0
+        sum_acc, sum_acc_norm, sum_acc_stderr, sum_acc_norm_stderr, count = (
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
         for key, values in data.items():
             if f"{benchmark_prefix}:" in key:
                 sum_acc += values["acc"]
@@ -53,16 +60,26 @@ def run(current_path: Path):
 
                 with open(json_file_path, "r") as file:
                     eval_data = json.load(file)
-                    iteration_step = eval_data["config_general"]["config"]["general"]["step"]
-                    consumed_train_samples = eval_data["config_general"]["config"]["general"]["consumed_train_samples"]
+                    iteration_step = eval_data["config_general"]["config"]["general"][
+                        "step"
+                    ]
+                    consumed_train_samples = eval_data["config_general"]["config"][
+                        "general"
+                    ]["consumed_train_samples"]
 
                     logging_results = {}
                     for name, data in eval_data["results"].items():
                         logging_results[f"{name}_acc"] = data["acc"]
 
-                    logging_results["mmlu:average_acc"] = compute_avg_acc_of_a_benchmark(eval_data["results"], "mmlu")
-                    logging_results["arc:average_acc"] = compute_avg_acc_of_a_benchmark(eval_data["results"], "arc")
-                    logging_results["all:average_acc"] = compute_avg_acc_of_all_tasks(eval_data["results"])
+                    logging_results["mmlu:average_acc"] = (
+                        compute_avg_acc_of_a_benchmark(eval_data["results"], "mmlu")
+                    )
+                    logging_results["arc:average_acc"] = compute_avg_acc_of_a_benchmark(
+                        eval_data["results"], "arc"
+                    )
+                    logging_results["all:average_acc"] = compute_avg_acc_of_all_tasks(
+                        eval_data["results"]
+                    )
 
                     wandb.log(
                         {
@@ -82,9 +99,17 @@ def run(current_path: Path):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eval-path", type=str, required=True, help="Path of the lighteval's evaluation results")
     parser.add_argument(
-        "--wandb-project", type=str, help="Path of the lighteval's evaluation results", default="nanotron_evals"
+        "--eval-path",
+        type=str,
+        required=True,
+        help="Path of the lighteval's evaluation results",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        help="Path of the lighteval's evaluation results",
+        default="nanotron_evals",
     )
     parser.add_argument(
         "--wandb-name",

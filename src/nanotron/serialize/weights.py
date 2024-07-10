@@ -27,7 +27,9 @@ from nanotron.serialize.utils import (
 logger = logging.get_logger(__name__)
 
 
-def save_weights(model: nn.Module, parallel_context: ParallelContext, root_folder: Path):
+def save_weights(
+    model: nn.Module, parallel_context: ParallelContext, root_folder: Path
+):
     root_folder = root_folder / "model"
 
     # We save only `dist.get_rank(parallel_context.dp_pg) == 0`
@@ -35,12 +37,16 @@ def save_weights(model: nn.Module, parallel_context: ParallelContext, root_folde
     if dist.get_rank(parallel_context.dp_pg) != 0:
         return
 
-    module_id_to_prefix = {id(module): f"{module_name}." for module_name, module in model.named_modules()}
+    module_id_to_prefix = {
+        id(module): f"{module_name}." for module_name, module in model.named_modules()
+    }
     # Fix the root_model
     module_id_to_prefix[id(model)] = ""
 
     # We chunk everything by `tp_world_size` in order to make sure that we gather all the weights into a single device before saving it
-    for name, param_or_buffer in tqdm(model.state_dict().items(), desc="Saving weights"):
+    for name, param_or_buffer in tqdm(
+        model.state_dict().items(), desc="Saving weights"
+    ):
 
         # exp_rank=0 saves all weights whereas exp_rank>0 save only MLP weights
         if dist.get_rank(parallel_context.expert_pg) != 0:
@@ -58,7 +64,9 @@ def save_weights(model: nn.Module, parallel_context: ParallelContext, root_folde
             metadata = {}
             if param.is_tied:
                 tied_info = param.get_tied_info()
-                base_name = tied_info.get_full_name_from_module_id_to_prefix(module_id_to_prefix=module_id_to_prefix)
+                base_name = tied_info.get_full_name_from_module_id_to_prefix(
+                    module_id_to_prefix=module_id_to_prefix
+                )
                 group_ranks = tied_info.global_ranks
                 group = parallel_context.world_ranks_to_pg[group_ranks]
                 # Only the first rank of the group of the tied weights saves weights
@@ -72,7 +80,9 @@ def save_weights(model: nn.Module, parallel_context: ParallelContext, root_folde
                 sharded_info: ShardedInfo = param.get_sharded_info()
                 group = parallel_context.world_ranks_to_pg[sharded_info.global_ranks]
                 exp_tp_pp_rank_and_size = get_exp_tp_pp_rank_and_size_from(
-                    world_rank=get_global_rank(group=group, group_rank=dist.get_rank(group)),
+                    world_rank=get_global_rank(
+                        group=group, group_rank=dist.get_rank(group)
+                    ),
                     parallel_context=parallel_context,
                 )
                 is_expert_sharded = sharded_info.is_expert_sharded(parallel_context)
@@ -124,15 +134,23 @@ def read_checkpoint_version_from_shard_file(param_save_path: Path) -> Version:
     return checkpoint_version
 
 
-def read_checkpoint_version_from_meta(parallel_context: ParallelContext, root_folder: Path) -> Version:
-    checkpoint_metadata: CheckpointMetadata = load_meta(parallel_context=parallel_context, root_folder=root_folder)
+def read_checkpoint_version_from_meta(
+    parallel_context: ParallelContext, root_folder: Path
+) -> Version:
+    checkpoint_metadata: CheckpointMetadata = load_meta(
+        parallel_context=parallel_context, root_folder=root_folder
+    )
     checkpoint_version = checkpoint_metadata.version
     return checkpoint_version
 
 
-def get_checkpoint_version(parallel_context, root_folder, param_save_path: Path) -> Version:
+def get_checkpoint_version(
+    parallel_context, root_folder, param_save_path: Path
+) -> Version:
     try:
-        checkpoint_version = read_checkpoint_version_from_shard_file(param_save_path=param_save_path)
+        checkpoint_version = read_checkpoint_version_from_shard_file(
+            param_save_path=param_save_path
+        )
     except CheckpointVersionFromShardFileException:
         log_rank(
             f"Failed to read checkpoint version from shard file {param_save_path}, reading from meta file.",
@@ -156,11 +174,15 @@ def load_sharded_param_latest(
     shards_and_slices_maps: List[Tuple[torch.Tensor, Tuple[SlicesPair, ...]]] = []
 
     for shard_path in shards_path:
-        with safe_open(shard_path, framework="pt", device=str(param_or_buffer.device)) as fi:
+        with safe_open(
+            shard_path, framework="pt", device=str(param_or_buffer.device)
+        ) as fi:
             # TODO @thomasw21: Choose only a slice if we switch the TP topology
             param_metadata = fi.metadata()
             param_metadata = TensorMetadata.from_str_dict(param_metadata)
-            shards_and_slices_maps.append((fi.get_tensor("data"), param_metadata.local_global_slices_pairs))
+            shards_and_slices_maps.append(
+                (fi.get_tensor("data"), param_metadata.local_global_slices_pairs)
+            )
 
             if checkpoint_unsharded_shape is None:
                 checkpoint_unsharded_shape = param_metadata.unsharded_shape
@@ -175,7 +197,9 @@ def load_sharded_param_latest(
 
     assert checkpoint_unsharded_shape is not None
     # TODO @thomasw21: Interestingly enough we don't actually need to instantiate the entire model at all.
-    unsharded_tensor = torch.empty(checkpoint_unsharded_shape, device=param_or_buffer.device)
+    unsharded_tensor = torch.empty(
+        checkpoint_unsharded_shape, device=param_or_buffer.device
+    )
 
     merge_and_shard_tp_tensors(
         buffer=param_or_buffer,
@@ -203,16 +227,22 @@ def load_weights(
     """
     param_root_folder = root_folder / "model"
 
-    module_id_to_prefix = {id(module): f"{module_name}." for module_name, module in model.named_modules()}
+    module_id_to_prefix = {
+        id(module): f"{module_name}." for module_name, module in model.named_modules()
+    }
     # Fix the root_model
     module_id_to_prefix[id(model)] = ""
 
     checkpoint_version: Optional[Version] = None
 
-    filtered_state_dict = filtered_state_dict if filtered_state_dict is not None else model.state_dict()
+    filtered_state_dict = (
+        filtered_state_dict if filtered_state_dict is not None else model.state_dict()
+    )
     param_shard_metadata = {}
     for name, param_or_buffer in tqdm(
-        filtered_state_dict.items(), disable=dist.get_rank(parallel_context.world_pg) != 0, desc="Loading weights"
+        filtered_state_dict.items(),
+        disable=dist.get_rank(parallel_context.world_pg) != 0,
+        desc="Loading weights",
     ):
         # NOTE: extract how does the current model parameter are sharded
         # so that we can load optimizer checkpoints in this way
@@ -226,7 +256,9 @@ def load_weights(
         if isinstance(param, NanotronParameter):
             if param.is_tied:
                 tied_info = param.get_tied_info()
-                base_name = tied_info.get_full_name_from_module_id_to_prefix(module_id_to_prefix=module_id_to_prefix)
+                base_name = tied_info.get_full_name_from_module_id_to_prefix(
+                    module_id_to_prefix=module_id_to_prefix
+                )
             else:
                 base_name = name
 
@@ -238,11 +270,14 @@ def load_weights(
                     group = parallel_context.world_ranks_to_pg[tied_info.global_ranks]
                     group_rank = 0
                 else:
-                    group = parallel_context.world_ranks_to_pg[sharded_info.global_ranks]
+                    group = parallel_context.world_ranks_to_pg[
+                        sharded_info.global_ranks
+                    ]
                     group_rank = dist.get_rank(group)
 
                 exp_tp_pp_rank_and_size = get_exp_tp_pp_rank_and_size_from(
-                    world_rank=get_global_rank(group=group, group_rank=group_rank), parallel_context=parallel_context
+                    world_rank=get_global_rank(group=group, group_rank=group_rank),
+                    parallel_context=parallel_context,
                 )
                 # TODO @nouamane: do we consider exp_size=1 expert_sharded?
                 is_expert_sharded = sharded_info.is_expert_sharded(parallel_context)
@@ -279,7 +314,9 @@ def load_weights(
                 # TODO @thomasw21: Make so that we don't need to code this logic somewhere else than in `get_path`
                 sharded_info = param.get_sharded_info()
                 suffix = base_name.rsplit(".", 1)[-1]
-                shards_path = list(path.parent.glob(f"{ObjectType.MODEL.value}_{suffix}*.safetensors"))
+                shards_path = list(
+                    path.parent.glob(f"{ObjectType.MODEL.value}_{suffix}*.safetensors")
+                )
                 if len(shards_path) <= 0:
                     raise ValueError(
                         f"Could not find any shards {ObjectType.MODEL.value}_{suffix}*.safetensors in {path.parent}."
@@ -293,8 +330,10 @@ def load_weights(
                 else:
                     current_checkpoint_version = None
                     try:
-                        current_checkpoint_version = read_checkpoint_version_from_shard_file(
-                            param_save_path=shards_path[0]
+                        current_checkpoint_version = (
+                            read_checkpoint_version_from_shard_file(
+                                param_save_path=shards_path[0]
+                            )
                         )
                     except CheckpointVersionFromShardFileException:
                         # The checkpoint version is read from the meta file
@@ -312,10 +351,14 @@ def load_weights(
                         param_shard_metadata=param_shard_metadata[name],
                     )
                 else:
-                    raise ValueError(f"Unsupported checkpoint version {checkpoint_version}")
+                    raise ValueError(
+                        f"Unsupported checkpoint version {checkpoint_version}"
+                    )
 
         else:
-            raise NotImplementedError(f"Parameters {param} should be a NanotronParameter")
+            raise NotImplementedError(
+                f"Parameters {param} should be a NanotronParameter"
+            )
 
     return param_shard_metadata
 
@@ -338,13 +381,17 @@ def get_checkpoint_paths_list(
     """
     param_root_folder = root_folder / "model"
 
-    module_id_to_prefix = {id(module): f"{module_name}." for module_name, module in model.named_modules()}
+    module_id_to_prefix = {
+        id(module): f"{module_name}." for module_name, module in model.named_modules()
+    }
     # Fix the root_model
     module_id_to_prefix[id(model)] = ""
 
     paths = []
 
-    filtered_state_dict = filtered_state_dict if filtered_state_dict is not None else model.state_dict()
+    filtered_state_dict = (
+        filtered_state_dict if filtered_state_dict is not None else model.state_dict()
+    )
     for name in tqdm(
         filtered_state_dict.values(),
         disable=dist.get_rank(parallel_context.world_pg) != 0,
@@ -359,7 +406,9 @@ def get_checkpoint_paths_list(
         if isinstance(param, NanotronParameter) or not only_list_current_process:
             if param.is_tied:
                 tied_info = param.get_tied_info()
-                base_name = tied_info.get_full_name_from_module_id_to_prefix(module_id_to_prefix=module_id_to_prefix)
+                base_name = tied_info.get_full_name_from_module_id_to_prefix(
+                    module_id_to_prefix=module_id_to_prefix
+                )
             else:
                 base_name = name
 
@@ -371,11 +420,14 @@ def get_checkpoint_paths_list(
                     group = parallel_context.world_ranks_to_pg[tied_info.global_ranks]
                     group_rank = 0
                 else:
-                    group = parallel_context.world_ranks_to_pg[sharded_info.global_ranks]
+                    group = parallel_context.world_ranks_to_pg[
+                        sharded_info.global_ranks
+                    ]
                     group_rank = dist.get_rank(group)
 
                 exp_tp_pp_rank_and_size = get_exp_tp_pp_rank_and_size_from(
-                    world_rank=get_global_rank(group=group, group_rank=group_rank), parallel_context=parallel_context
+                    world_rank=get_global_rank(group=group, group_rank=group_rank),
+                    parallel_context=parallel_context,
                 )
             else:
                 exp_tp_pp_rank_and_size = None

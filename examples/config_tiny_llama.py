@@ -1,4 +1,5 @@
 """ Example python script to generate a YAML config file which can be used to run a training with nanotron. Refer to "examples" section in the `/README.md` for more information."""
+
 import os
 
 from nanotron.config import (
@@ -55,7 +56,11 @@ print(f"Model has {num_params} parameters")
 seed = 42
 
 learning_rate = LRSchedulerArgs(
-    learning_rate=3e-4, lr_warmup_steps=2, lr_warmup_style="linear", lr_decay_style="cosine", min_decay_lr=1e-5
+    learning_rate=3e-4,
+    lr_warmup_steps=2,
+    lr_warmup_style="linear",
+    lr_decay_style="cosine",
+    min_decay_lr=1e-5,
 )
 
 optimizer = OptimizerArgs(
@@ -81,14 +86,21 @@ parallelism = ParallelismArgs(
     tp_linear_async_communication=True,
 )
 
-tokens = TokensArgs(sequence_length=256, train_steps=15, micro_batch_size=2, batch_accumulation_per_replica=1)
+tokens = TokensArgs(
+    sequence_length=256,
+    train_steps=15,
+    micro_batch_size=2,
+    batch_accumulation_per_replica=1,
+)
 
 data_stages = [
     DatasetStageArgs(
         name="Stable Training Stage",
         start_training_step=1,
         data=DataArgs(
-            dataset=PretrainDatasetsArgs(hf_dataset_or_datasets="stas/openwebtext-10k", text_column_name="text"),
+            dataset=PretrainDatasetsArgs(
+                hf_dataset_or_datasets="stas/openwebtext-10k", text_column_name="text"
+            ),
             seed=seed,
         ),
     ),
@@ -96,7 +108,9 @@ data_stages = [
         name="Annealing Phase",
         start_training_step=10,
         data=DataArgs(
-            dataset=PretrainDatasetsArgs(hf_dataset_or_datasets="stas/openwebtext-10k", text_column_name="text"),
+            dataset=PretrainDatasetsArgs(
+                hf_dataset_or_datasets="stas/openwebtext-10k", text_column_name="text"
+            ),
             seed=seed,
         ),
     ),
@@ -107,7 +121,9 @@ os.makedirs(checkpoints_path, exist_ok=True)
 
 config = Config(
     general=GeneralArgs(project="debug", run="tiny_llama_%date_%jobid", seed=seed),
-    checkpoints=CheckpointsArgs(checkpoints_path=checkpoints_path, checkpoint_interval=10),
+    checkpoints=CheckpointsArgs(
+        checkpoints_path=checkpoints_path, checkpoint_interval=10
+    ),
     parallelism=parallelism,
     model=ModelArgs(init_method=RandomInit(std=0.025), model_config=model_config),
     tokenizer=TokenizerArgs("robot-test/dummy-tokenizer-wordlevel"),

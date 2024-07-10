@@ -15,10 +15,20 @@ def get_args():
     parser = argparse.ArgumentParser()
     group = parser.add_argument_group(title="input data")
     group.add_argument(
-        "--input", type=str, required=True, help="Path to local stored dataset or repository on the Hugging Face hub"
+        "--input",
+        type=str,
+        required=True,
+        help="Path to local stored dataset or repository on the Hugging Face hub",
     )
-    group.add_argument("--column", type=str, default="text", help="Column to preprocess from the Dataset")
-    parser.add_argument("--split", type=str, default="train", help="Which split of the data to process")
+    group.add_argument(
+        "--column",
+        type=str,
+        default="text",
+        help="Column to preprocess from the Dataset",
+    )
+    parser.add_argument(
+        "--split", type=str, default="train", help="Which split of the data to process"
+    )
 
     group = parser.add_argument_group(title="tokenizer")
     group.add_argument(
@@ -34,7 +44,12 @@ def get_args():
     )
 
     group = parser.add_argument_group(title="output data")
-    group.add_argument("--output-prefix", type=str, required=True, help="Path to the output processed dataset file")
+    group.add_argument(
+        "--output-prefix",
+        type=str,
+        required=True,
+        help="Path to the output processed dataset file",
+    )
 
     args = parser.parse_args()
 
@@ -50,11 +65,20 @@ def main(args):
         sys.stdout = open(os.devnull, "w")
 
     # Check if output directory exists
-    if not os.path.isdir(os.path.abspath(os.path.join(args.output_prefix, os.path.pardir))):
-        print(f"Creating {os.path.abspath(os.path.join(args.output_prefix, os.path.pardir))} directory...")
-        os.makedirs(os.path.abspath(os.path.join(args.output_prefix, os.path.pardir)), exist_ok=True)
+    if not os.path.isdir(
+        os.path.abspath(os.path.join(args.output_prefix, os.path.pardir))
+    ):
+        print(
+            f"Creating {os.path.abspath(os.path.join(args.output_prefix, os.path.pardir))} directory..."
+        )
+        os.makedirs(
+            os.path.abspath(os.path.join(args.output_prefix, os.path.pardir)),
+            exist_ok=True,
+        )
 
-    if args.input.endswith(".json"):  # For processing JSON files (Cross compatibility with other projects)
+    if args.input.endswith(
+        ".json"
+    ):  # For processing JSON files (Cross compatibility with other projects)
         ds = load_dataset("json", data_files=args.input)
         ds = concatenate_datasets(
             [ds[splits] for splits in ds.keys()]
@@ -66,7 +90,9 @@ def main(args):
     ds = ds.select_columns(args.column)
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name_or_path)
-    token_dtype = np.int32 if len(tokenizer) > np.iinfo(np.uint16).max + 1 else np.uint16
+    token_dtype = (
+        np.int32 if len(tokenizer) > np.iinfo(np.uint16).max + 1 else np.uint16
+    )
 
     # Create tmp directory for worker outputs
     tmp_folder = os.path.abspath(os.path.join(args.output_prefix, os.pardir, "tmp"))
@@ -75,7 +101,11 @@ def main(args):
     print("Creating workers output files...")
     worker_output_file = os.path.join(tmp_folder, f"worker_{rank}_input_ids.npy")
     ds = ds.map(
-        lambda x: {"input_ids": tokenizer(x, add_special_tokens=args.add_special_tokens).input_ids},
+        lambda x: {
+            "input_ids": tokenizer(
+                x, add_special_tokens=args.add_special_tokens
+            ).input_ids
+        },
         input_columns=args.column,
         batched=True,
         desc="Tokenizing Dataset",
@@ -96,7 +126,9 @@ def main(args):
         output_file = f"{args.output_prefix}_input_ids.npy"
         input_ids_file = open(output_file, "wb")
         for worker_idx in tqdm(range(world_size), desc="Merging workers output files"):
-            worker_output_file = os.path.join(tmp_folder, f"worker_{worker_idx}_input_ids.npy")
+            worker_output_file = os.path.join(
+                tmp_folder, f"worker_{worker_idx}_input_ids.npy"
+            )
             with open(worker_output_file, "rb") as f:
                 shutil.copyfileobj(f, input_ids_file)
             os.remove(worker_output_file)

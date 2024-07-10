@@ -44,7 +44,9 @@ class Nanoset(torch.utils.data.Dataset):
         ## To build the index we need the length of each dataset
         self.dataset_lengths = []
         for dataset_path in self.dataset_paths:
-            self.dataset_buffer_mmap = np.memmap(dataset_path, mode="r", order="C", dtype=self.token_dtype)
+            self.dataset_buffer_mmap = np.memmap(
+                dataset_path, mode="r", order="C", dtype=self.token_dtype
+            )
             self.dataset_buffer = memoryview(self.dataset_buffer_mmap)
             dataset_number_of_tokens = int(len(self.dataset_buffer))
             number_of_samples = int(
@@ -87,13 +89,22 @@ class Nanoset(torch.utils.data.Dataset):
 
         # Rebuild the memmap in every access to free memory
         # https://stackoverflow.com/a/61472122
-        self.dataset_buffer_mmap = np.memmap(self.dataset_paths[dataset], mode="r", order="C", dtype=self.token_dtype)
+        self.dataset_buffer_mmap = np.memmap(
+            self.dataset_paths[dataset], mode="r", order="C", dtype=self.token_dtype
+        )
         self.dataset_buffer = memoryview(self.dataset_buffer_mmap)
 
         # uint16 -> 2 bytes per token, int32 -> 4 bytes per token
-        offset = dataset_sample * self.sequence_length * (np.iinfo(self.token_dtype).bits / 8)
+        offset = (
+            dataset_sample
+            * self.sequence_length
+            * (np.iinfo(self.token_dtype).bits / 8)
+        )
         input_ids_tokens = np.frombuffer(
-            self.dataset_buffer, dtype=self.token_dtype, count=(self.sequence_length + 1), offset=int(offset)
+            self.dataset_buffer,
+            dtype=self.token_dtype,
+            count=(self.sequence_length + 1),
+            offset=int(offset),
         )
 
         # Return tokens as np.int32 as Torch can't handle uint16
@@ -108,7 +119,9 @@ class Nanoset(torch.utils.data.Dataset):
         num_epochs = int(self.train_split_num_samples / samples_per_epoch) + 1
         # Build the dataset indexes for 1 epoch
         dataset_index, dataset_sample_index = build_nanoset_index_helper(
-            n_samples=samples_per_epoch, weights=self.dataset_weights, dataset_sizes=self.dataset_lengths
+            n_samples=samples_per_epoch,
+            weights=self.dataset_weights,
+            dataset_sizes=self.dataset_lengths,
         )
         # Shuffle the indexes the same way
         numpy_random_state = np.random.RandomState(self.random_seed)
@@ -117,7 +130,9 @@ class Nanoset(torch.utils.data.Dataset):
         numpy_random_state.shuffle(dataset_sample_index)
         # Concatenate num_epochs the shuffled indexes
         dataset_index = np.concatenate([dataset_index for _ in range(num_epochs)])
-        dataset_sample_index = np.concatenate([dataset_sample_index for _ in range(num_epochs)])
+        dataset_sample_index = np.concatenate(
+            [dataset_sample_index for _ in range(num_epochs)]
+        )
         # Just keep the necessary samples
         dataset_index = dataset_index[: self.train_split_num_samples]
         dataset_sample_index = dataset_sample_index[: self.train_split_num_samples]
@@ -135,13 +150,23 @@ class Nanoset(torch.utils.data.Dataset):
 
     def print_nanoset_info(self):
 
-        log_rank(f"> Total number of samples: {len(self)}", logger=logger, level=logging.INFO, rank=0)
         log_rank(
-            f"> Total number of tokens: {len(self) * self.sequence_length}", logger=logger, level=logging.INFO, rank=0
+            f"> Total number of samples: {len(self)}",
+            logger=logger,
+            level=logging.INFO,
+            rank=0,
+        )
+        log_rank(
+            f"> Total number of tokens: {len(self) * self.sequence_length}",
+            logger=logger,
+            level=logging.INFO,
+            rank=0,
         )
 
         # Print samples from each dataset + weight
-        dataset_sample_count = count_dataset_indexes(self.dataset_index, len(self.dataset_paths))
+        dataset_sample_count = count_dataset_indexes(
+            self.dataset_index, len(self.dataset_paths)
+        )
         for index, sample_count in enumerate(dataset_sample_count):
             log_rank(
                 f">   Total number of samples from the {self.dataset_paths[index].rsplit('/', 1)[-1]} dataset: {sample_count} ({round(normalize(dataset_sample_count).tolist()[index], 2)})",
@@ -161,7 +186,9 @@ def build_nanoset_index_helper(
     """
     # Create empty arrays for dataset indices and dataset sample indices
     dataset_index = np.empty((n_samples,), dtype="uint")
-    dataset_sample_index = np.empty((n_samples,), dtype="long")  # Supports dataset with up to 2**64 samples
+    dataset_sample_index = np.empty(
+        (n_samples,), dtype="long"
+    )  # Supports dataset with up to 2**64 samples
 
     # Initialize buffer for number of samples used for each dataset
     current_samples = np.zeros((len(weights),), dtype="long")
@@ -178,7 +205,9 @@ def build_nanoset_index_helper(
 
         # Assign the dataset index and update the sample index
         dataset_index[sample_idx] = max_error_index
-        dataset_sample_index[sample_idx] = current_samples[max_error_index] % dataset_sizes[max_error_index]
+        dataset_sample_index[sample_idx] = (
+            current_samples[max_error_index] % dataset_sizes[max_error_index]
+        )
 
         # Update the total samples for the selected dataset
         current_samples[max_error_index] += 1

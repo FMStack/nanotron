@@ -7,7 +7,9 @@ from torch import nn
 
 def test_nanotron_parameter_does_not_override_some_parameter_variable():
     param = nn.Parameter(torch.empty(3))
-    assert not hasattr(param, NanotronParameter.NANOTRON_PARAMETER_METADATA_ATTRIBUTE_NAME)
+    assert not hasattr(
+        param, NanotronParameter.NANOTRON_PARAMETER_METADATA_ATTRIBUTE_NAME
+    )
 
 
 def test_uncastable_tensor():
@@ -17,16 +19,26 @@ def test_uncastable_tensor():
     assert isinstance(x, DTypeInvariantTensor)
 
     # Test that we cannot modify the type of an DTypeInvariantTensor
-    with assert_fail_with(RuntimeError, error_msg="Cannot convert the type of an DTypeInvariantTensor to float"):
+    with assert_fail_with(
+        RuntimeError,
+        error_msg="Cannot convert the type of an DTypeInvariantTensor to float",
+    ):
         x = x.float()
 
-    with assert_fail_with(RuntimeError, error_msg="Cannot convert the type of an DTypeInvariantTensor to half"):
+    with assert_fail_with(
+        RuntimeError,
+        error_msg="Cannot convert the type of an DTypeInvariantTensor to half",
+    ):
         x = x.half()
 
-    with assert_fail_with(RuntimeError, error_msg="Cannot change the type of an DTypeInvariantTensor"):
+    with assert_fail_with(
+        RuntimeError, error_msg="Cannot change the type of an DTypeInvariantTensor"
+    ):
         x = x.to(torch.float32)
 
-    with assert_fail_with(RuntimeError, error_msg="Cannot change the type of an DTypeInvariantTensor"):
+    with assert_fail_with(
+        RuntimeError, error_msg="Cannot change the type of an DTypeInvariantTensor"
+    ):
         x = x.to(dtype=torch.float32)
 
     # Test that we can modify the value of an DTypeInvariantTensor
@@ -46,7 +58,9 @@ def test_register_buffer_does_not_update_uncastable_tensor():
     with init_on_device_and_dtype(device=new_device, dtype=new_dtype):
         module = torch.nn.Module()
         # Test that we can register an DTypeInvariantTensor as a buffer
-        tensor = DTypeInvariantTensor(torch.randn(3, 4, dtype=old_dtype, device=old_device))
+        tensor = DTypeInvariantTensor(
+            torch.randn(3, 4, dtype=old_dtype, device=old_device)
+        )
         module.register_buffer("buffer", tensor)
 
         # Test that we can modify the buffer

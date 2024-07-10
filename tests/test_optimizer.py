@@ -2,7 +2,11 @@ from typing import Union
 
 import pytest
 import torch
-from helpers.llama import TINY_LLAMA_CONFIG, create_llama_from_config, get_llama_training_config
+from helpers.llama import (
+    TINY_LLAMA_CONFIG,
+    create_llama_from_config,
+    get_llama_training_config,
+)
 from helpers.utils import init_distributed, rerun_if_address_is_in_use
 from nanotron.config import ModelArgs, RandomInit, SpectralMupInit
 from nanotron.helpers import get_custom_lr_for_named_parameters
@@ -12,11 +16,14 @@ from nanotron.scaling.parametrization import ParametrizationMethod
 
 @pytest.mark.parametrize("tp,dp,pp", [(1, 1, 1), (2, 1, 1), (1, 1, 2), (2, 1, 2)])
 @pytest.mark.parametrize(
-    "parametrization_method", [ParametrizationMethod.STANDARD, ParametrizationMethod.SPECTRAL_MUP]
+    "parametrization_method",
+    [ParametrizationMethod.STANDARD, ParametrizationMethod.SPECTRAL_MUP],
 )
 @pytest.mark.skip
 @rerun_if_address_is_in_use()
-def test_get_custom_lr(tp: int, dp: int, pp: int, parametrization_method: ParametrizationMethod):
+def test_get_custom_lr(
+    tp: int, dp: int, pp: int, parametrization_method: ParametrizationMethod
+):
     LR = 1e-3
 
     if parametrization_method == ParametrizationMethod.STANDARD:
@@ -52,12 +59,24 @@ def _test_get_custom_lr(
         return
 
     named_param_groups = get_custom_lr_for_named_parameters(
-        parametrization_method=parametrization_method, lr=lr, named_parameters=named_parameters, model=llama
+        parametrization_method=parametrization_method,
+        lr=lr,
+        named_parameters=named_parameters,
+        model=llama,
     )
 
     assert len(named_param_groups) == len(named_parameters)
-    assert all(isinstance(named_param_group["lr"], float) for named_param_group in named_param_groups)
-    assert all(isinstance(named_param_group["named_params"], list) for named_param_group in named_param_groups)
+    assert all(
+        isinstance(named_param_group["lr"], float)
+        for named_param_group in named_param_groups
+    )
+    assert all(
+        isinstance(named_param_group["named_params"], list)
+        for named_param_group in named_param_groups
+    )
 
     is_all_lr_the_same = parametrization_method == ParametrizationMethod.STANDARD
-    assert all(named_param_group["lr"] == lr for named_param_group in named_param_groups) is is_all_lr_the_same
+    assert (
+        all(named_param_group["lr"] == lr for named_param_group in named_param_groups)
+        is is_all_lr_the_same
+    )

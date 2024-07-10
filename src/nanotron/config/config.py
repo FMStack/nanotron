@@ -11,7 +11,12 @@ from dacite import from_dict
 from yaml.loader import SafeLoader
 
 from nanotron.config.lighteval_config import LightEvalConfig
-from nanotron.config.models_config import ExistingCheckpointInit, NanotronConfigs, RandomInit, SpectralMupInit
+from nanotron.config.models_config import (
+    ExistingCheckpointInit,
+    NanotronConfigs,
+    RandomInit,
+    SpectralMupInit,
+)
 from nanotron.config.parallelism_config import ParallelismArgs
 from nanotron.config.utils_config import (
     RecomputeGranularity,
@@ -100,8 +105,12 @@ class NanosetDatasetsArgs:
             self.dataset_path = [self.dataset_path]
             self.dataset_weights = [1]
         elif isinstance(self.dataset_path, List):  # Case 2: > 1 Dataset file
-            self.dataset_weights = None  # Set to None so we consume all the samples randomly
-        elif isinstance(self.dataset_path, dict):  # Case 3: dict with > 1 dataset_path and weights
+            self.dataset_weights = (
+                None  # Set to None so we consume all the samples randomly
+            )
+        elif isinstance(
+            self.dataset_path, dict
+        ):  # Case 3: dict with > 1 dataset_path and weights
             tmp_dataset_path = self.dataset_path.copy()
             self.dataset_path = list(tmp_dataset_path.keys())
             self.dataset_weights = list(tmp_dataset_path.values())
@@ -130,7 +139,9 @@ class DatasetStageArgs:
 
     def __post_init__(self):
         if self.start_training_step < 0:
-            raise ValueError(f"training_steps should be a positive integer and not {self.start_training_step}")
+            raise ValueError(
+                f"training_steps should be a positive integer and not {self.start_training_step}"
+            )
 
 
 @dataclass
@@ -348,13 +359,19 @@ class Config:
         if self.profiler is not None and self.profiler.profiler_export_path is not None:
             assert self.tokens.train_steps < 10
 
-        if self.optimizer is not None and self.optimizer.learning_rate_scheduler.lr_decay_steps is None:
+        if (
+            self.optimizer is not None
+            and self.optimizer.learning_rate_scheduler.lr_decay_steps is None
+        ):
             self.optimizer.learning_rate_scheduler.lr_decay_steps = (
-                self.tokens.train_steps - self.optimizer.learning_rate_scheduler.lr_warmup_steps
+                self.tokens.train_steps
+                - self.optimizer.learning_rate_scheduler.lr_warmup_steps
             )
 
         if self.data_stages is not None:
-            self.data_stages = sorted(self.data_stages, key=lambda stage: stage.start_training_step)
+            self.data_stages = sorted(
+                self.data_stages, key=lambda stage: stage.start_training_step
+            )
             names = [stage.name for stage in self.data_stages]
             training_steps = [stage.start_training_step for stage in self.data_stages]
             assert any(
@@ -363,7 +380,9 @@ class Config:
 
             for stage in self.data_stages:
                 if names.count(stage.name) > 1:
-                    raise ValueError(f"Each stage should have unique names and not {names}")
+                    raise ValueError(
+                        f"Each stage should have unique names and not {names}"
+                    )
 
                 if training_steps.count(stage.start_training_step) > 1:
                     raise ValueError(
@@ -372,7 +391,8 @@ class Config:
 
             # NOTE: must order the stages by start_training_step from lowest to highest
             assert all(
-                self.data_stages[i].start_training_step < self.data_stages[i + 1].start_training_step
+                self.data_stages[i].start_training_step
+                < self.data_stages[i + 1].start_training_step
                 for i in range(len(self.data_stages) - 1)
             ), "The stages are not sorted by start_training_step in increasing order"
 
@@ -382,7 +402,11 @@ class Config:
 
     @property
     def global_batch_size(self):
-        return self.tokens.micro_batch_size * self.tokens.batch_accumulation_per_replica * self.parallelism.dp
+        return (
+            self.tokens.micro_batch_size
+            * self.tokens.batch_accumulation_per_replica
+            * self.parallelism.dp
+        )
 
     def save_as_yaml(self, file_path: str):
         config_dict = serialize(self)
@@ -398,7 +422,10 @@ class Config:
 
 
 def get_config_from_dict(
-    config_dict: dict, config_class: Type = Config, skip_unused_config_keys: bool = False, skip_null_keys: bool = False
+    config_dict: dict,
+    config_class: Type = Config,
+    skip_unused_config_keys: bool = False,
+    skip_null_keys: bool = False,
 ):
     """Get a config object from a dictionary
 
@@ -411,12 +438,18 @@ def get_config_from_dict(
     if skip_unused_config_keys:
         logger.warning("skip_unused_config_keys set")
         config_dict = {
-            field.name: config_dict[field.name] for field in fields(config_class) if field.name in config_dict
+            field.name: config_dict[field.name]
+            for field in fields(config_class)
+            if field.name in config_dict
         }
     if skip_null_keys:
         logger.warning("Skip_null_keys set")
         config_dict = {
-            k: {kk: vv for kk, vv in v.items() if vv is not None} if isinstance(v, dict) else v
+            k: (
+                {kk: vv for kk, vv in v.items() if vv is not None}
+                if isinstance(v, dict)
+                else v
+            )
             for k, v in config_dict.items()
             if v is not None
         }
