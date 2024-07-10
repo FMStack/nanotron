@@ -78,9 +78,9 @@ optimizer = OptimizerArgs(
 )
 
 parallelism = ParallelismArgs(
-    dp=2,
-    pp=2,
-    tp=2,
+    dp=1,
+    pp=1,
+    tp=1,
     pp_engine="1f1b",
     tp_mode="REDUCE_SCATTER",
     tp_linear_async_communication=True,

@@ -21,6 +21,11 @@ dependencies = [
     "safetensors",
     "dacite",
     "tqdm",
+    "flash-attn>=2.5.0",
+    "transformers",
+    "datasets",
+    "numba",
+    "wandb",
 ]
 
 [tool.setuptools.packages.find]
@@ -43,15 +48,6 @@ test = [
     "pytest-xdist"
 ]
 
-fast-modeling = [
-    "flash-attn>=2.5.0",
-]
-
-nanosets = [
-     "transformers",
-     "datasets",
-     "numba",
-]
 
 [build-system]
 requires = [
